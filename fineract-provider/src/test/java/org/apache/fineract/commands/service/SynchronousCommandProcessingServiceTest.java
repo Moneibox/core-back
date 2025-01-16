@@ -19,6 +19,7 @@
 package org.apache.fineract.commands.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,10 +35,10 @@ import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDoma
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.domain.FineractRequestContextHolder;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.ToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.useradministration.domain.AppUser;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -141,6 +142,7 @@ public class SynchronousCommandProcessingServiceTest {
         NewCommandSourceHandler commandHandler = Mockito.mock(NewCommandSourceHandler.class);
         CommandProcessingResult commandProcessingResult = Mockito.mock(CommandProcessingResult.class);
         CommandSource commandSource = Mockito.mock(CommandSource.class);
+        when(commandSource.getId()).thenReturn(1L);
         when(commandProcessingResult.isRollbackTransaction()).thenReturn(false);
         RuntimeException runtimeException = new RuntimeException("foo");
         when(commandHandler.processCommand(jsonCommand)).thenThrow(runtimeException);
@@ -153,6 +155,7 @@ public class SynchronousCommandProcessingServiceTest {
         when(commandSourceService.getCommandSource(commandId)).thenReturn(commandSource);
 
         AppUser appUser = Mockito.mock(AppUser.class);
+        when(appUser.getId()).thenReturn(1L);
         when(context.authenticatedUser(Mockito.any(CommandWrapper.class))).thenReturn(appUser);
         when(commandSourceService.saveInitialNewTransaction(commandWrapper, jsonCommand, appUser, idk)).thenReturn(commandSource);
 
@@ -163,11 +166,25 @@ public class SynchronousCommandProcessingServiceTest {
         when(commandSourceService.processCommand(commandHandler, jsonCommand, commandSource, appUser, false, false))
                 .thenThrow(runtimeException);
 
-        Assertions.assertThrows(RuntimeException.class, () -> {
+        assertThrows(RuntimeException.class, () -> {
             underTest.executeCommand(commandWrapper, jsonCommand, false);
         });
 
         verify(commandSourceService).getCommandSource(commandId);
         verify(commandSourceService).generateErrorInfo(runtimeException);
+    }
+
+    @Test
+    public void publishHookEventHandlesInvalidJson() {
+        String entityName = "entity";
+        String actionName = "action";
+        JsonCommand command = Mockito.mock(JsonCommand.class);
+        String invalidJson = "{ invalidJson }";
+
+        when(command.json()).thenReturn(invalidJson);
+
+        assertThrows(PlatformApiDataValidationException.class, () -> {
+            underTest.publishHookEvent(entityName, actionName, command, Object.class);
+        });
     }
 }

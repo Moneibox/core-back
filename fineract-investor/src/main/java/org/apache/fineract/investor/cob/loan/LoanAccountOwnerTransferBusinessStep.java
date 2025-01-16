@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.cob.loan.LoanCOBBusinessStep;
@@ -103,14 +104,19 @@ public class LoanAccountOwnerTransferBusinessStep implements LoanCOBBusinessStep
 
     private void handleBuyback(final Loan loan, final LocalDate settlementDate,
             final ExternalAssetOwnerTransfer buybackExternalAssetOwnerTransfer) {
-        ExternalAssetOwnerTransfer activeExternalAssetOwnerTransfer = externalAssetOwnerTransferRepository
+        Optional<ExternalAssetOwnerTransfer> optActiveExternalAssetOwnerTransfer = externalAssetOwnerTransferRepository
                 .findOne((root, query, criteriaBuilder) -> criteriaBuilder.and(criteriaBuilder.equal(root.get("loanId"), loan.getId()),
                         criteriaBuilder.equal(root.get("owner"), buybackExternalAssetOwnerTransfer.getOwner()),
                         criteriaBuilder.equal(root.get("status"), ExternalTransferStatus.ACTIVE),
-                        criteriaBuilder.equal(root.get("effectiveDateTo"), FUTURE_DATE_9999_12_31)))
-                .orElseThrow();
-        ExternalAssetOwnerTransfer newExternalAssetOwnerTransfer = buybackAsset(loan, settlementDate, buybackExternalAssetOwnerTransfer,
-                activeExternalAssetOwnerTransfer);
+                        criteriaBuilder.equal(root.get("effectiveDateTo"), FUTURE_DATE_9999_12_31)));
+        ExternalAssetOwnerTransfer newExternalAssetOwnerTransfer;
+        if (!optActiveExternalAssetOwnerTransfer.isPresent()) {
+            newExternalAssetOwnerTransfer = createNewEntry(settlementDate, buybackExternalAssetOwnerTransfer,
+                    ExternalTransferStatus.CANCELLED, ExternalTransferSubStatus.UNSOLD, settlementDate, settlementDate);
+        } else {
+            newExternalAssetOwnerTransfer = buybackAsset(loan, settlementDate, buybackExternalAssetOwnerTransfer,
+                    optActiveExternalAssetOwnerTransfer.get());
+        }
         businessEventNotifierService.notifyPostBusinessEvent(new LoanOwnershipTransferBusinessEvent(newExternalAssetOwnerTransfer, loan));
         businessEventNotifierService.notifyPostBusinessEvent(new LoanAccountSnapshotBusinessEvent(loan));
     }
@@ -152,15 +158,13 @@ public class LoanAccountOwnerTransferBusinessStep implements LoanCOBBusinessStep
             ExternalAssetOwnerTransfer externalAssetOwnerTransfer) {
         ExternalAssetOwnerTransferDetails details = new ExternalAssetOwnerTransferDetails();
         details.setExternalAssetOwnerTransfer(externalAssetOwnerTransfer);
-        details.setTotalOutstanding(Objects.requireNonNullElse(loan.getLoanSummary().getTotalOutstanding(), BigDecimal.ZERO));
-        details.setTotalPrincipalOutstanding(
-                Objects.requireNonNullElse(loan.getLoanSummary().getTotalPrincipalOutstanding(), BigDecimal.ZERO));
-        details.setTotalInterestOutstanding(
-                Objects.requireNonNullElse(loan.getLoanSummary().getTotalInterestOutstanding(), BigDecimal.ZERO));
+        details.setTotalOutstanding(Objects.requireNonNullElse(loan.getSummary().getTotalOutstanding(), BigDecimal.ZERO));
+        details.setTotalPrincipalOutstanding(Objects.requireNonNullElse(loan.getSummary().getTotalPrincipalOutstanding(), BigDecimal.ZERO));
+        details.setTotalInterestOutstanding(Objects.requireNonNullElse(loan.getSummary().getTotalInterestOutstanding(), BigDecimal.ZERO));
         details.setTotalFeeChargesOutstanding(
-                Objects.requireNonNullElse(loan.getLoanSummary().getTotalFeeChargesOutstanding(), BigDecimal.ZERO));
+                Objects.requireNonNullElse(loan.getSummary().getTotalFeeChargesOutstanding(), BigDecimal.ZERO));
         details.setTotalPenaltyChargesOutstanding(
-                Objects.requireNonNullElse(loan.getLoanSummary().getTotalPenaltyChargesOutstanding(), BigDecimal.ZERO));
+                Objects.requireNonNullElse(loan.getSummary().getTotalPenaltyChargesOutstanding(), BigDecimal.ZERO));
         details.setTotalOverpaid(Objects.requireNonNullElse(loan.getTotalOverpaid(), BigDecimal.ZERO));
         return details;
     }
@@ -173,7 +177,7 @@ public class LoanAccountOwnerTransferBusinessStep implements LoanCOBBusinessStep
     }
 
     private boolean isTransferable(final Loan loan) {
-        return MathUtil.nullToDefault(loan.getLoanSummary().getTotalOutstanding(), BigDecimal.ZERO).compareTo(BigDecimal.ZERO) > 0;
+        return MathUtil.nullToDefault(loan.getSummary().getTotalOutstanding(), BigDecimal.ZERO).compareTo(BigDecimal.ZERO) > 0;
     }
 
     private void handleSameDaySaleAndBuyback(final LocalDate settlementDate, final List<ExternalAssetOwnerTransfer> transferDataList,

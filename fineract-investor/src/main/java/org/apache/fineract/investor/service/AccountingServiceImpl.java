@@ -40,6 +40,7 @@ import org.apache.fineract.investor.domain.ExternalAssetOwnerTransferJournalEntr
 import org.apache.fineract.investor.domain.ExternalAssetOwnerTransferJournalEntryMappingRepository;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
 
@@ -69,7 +70,8 @@ public class AccountingServiceImpl implements AccountingService {
     public void createJournalEntriesForBuybackAssetTransfer(final Loan loan, final ExternalAssetOwnerTransfer transfer) {
         List<JournalEntry> journalEntryList = createJournalEntries(loan, transfer, false);
         createMappingToTransfer(transfer, journalEntryList);
-        createMappingToOwner(transfer, journalEntryList, JournalEntryType.CREDIT);
+        createMappingToOwner(transfer, journalEntryList,
+                LoanStatus.OVERPAID.equals(loan.getStatus()) ? JournalEntryType.DEBIT : JournalEntryType.CREDIT);
     }
 
     @NotNull
@@ -78,10 +80,10 @@ public class AccountingServiceImpl implements AccountingService {
         // transaction properties
         final Long transactionId = transfer.getId();
         final LocalDate transactionDate = transfer.getSettlementDate();
-        final BigDecimal principalAmount = loan.getLoanSummary().getTotalPrincipalOutstanding();
-        final BigDecimal interestAmount = loan.getLoanSummary().getTotalInterestOutstanding();
-        final BigDecimal feesAmount = loan.getLoanSummary().getTotalFeeChargesOutstanding();
-        final BigDecimal penaltiesAmount = loan.getLoanSummary().getTotalPenaltyChargesOutstanding();
+        final BigDecimal principalAmount = loan.getSummary().getTotalPrincipalOutstanding();
+        final BigDecimal interestAmount = loan.getSummary().getTotalInterestOutstanding();
+        final BigDecimal feesAmount = loan.getSummary().getTotalFeeChargesOutstanding();
+        final BigDecimal penaltiesAmount = loan.getSummary().getTotalPenaltyChargesOutstanding();
         final BigDecimal overPaymentAmount = loan.getTotalOverpaid();
 
         // Moving money to asset transfer account

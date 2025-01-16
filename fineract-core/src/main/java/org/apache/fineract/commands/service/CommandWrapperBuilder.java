@@ -21,6 +21,7 @@ package org.apache.fineract.commands.service;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.infrastructure.accountnumberformat.service.AccountNumberFormatConstants;
+import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.portfolio.client.api.ClientApiConstants;
 import org.apache.fineract.portfolio.paymenttype.api.PaymentTypeApiResourceConstants;
 import org.apache.fineract.portfolio.savings.DepositsApiConstants;
@@ -47,18 +48,19 @@ public class CommandWrapperBuilder {
     private Long organisationCreditBureauId;
     private String jobName;
     private String idempotencyKey;
+    private ExternalId loanExternalId;
 
     @SuppressFBWarnings(value = "UWF_UNWRITTEN_FIELD", justification = "TODO: fix this!")
     public CommandWrapper build() {
         return new CommandWrapper(this.officeId, this.groupId, this.clientId, this.loanId, this.savingsId, this.actionName, this.entityName,
                 this.entityId, this.subentityId, this.href, this.json, this.transactionId, this.productId, this.templateId,
-                this.creditBureauId, this.organisationCreditBureauId, this.jobName, this.idempotencyKey);
+                this.creditBureauId, this.organisationCreditBureauId, this.jobName, this.idempotencyKey, this.loanExternalId);
     }
 
     public CommandWrapper build(String idempotencyKey) {
         return new CommandWrapper(this.officeId, this.groupId, this.clientId, this.loanId, this.savingsId, this.actionName, this.entityName,
                 this.entityId, this.subentityId, this.href, this.json, this.transactionId, this.productId, this.templateId,
-                this.creditBureauId, this.organisationCreditBureauId, this.jobName, idempotencyKey);
+                this.creditBureauId, this.organisationCreditBureauId, this.jobName, idempotencyKey, this.loanExternalId);
     }
 
     public CommandWrapperBuilder updateCreditBureau() {
@@ -842,6 +844,15 @@ public class CommandWrapperBuilder {
         return this;
     }
 
+    public CommandWrapperBuilder loanInterestPaymentWaiverTransaction(final Long loanId) {
+        this.actionName = "INTERESTPAYMENTWAIVER";
+        this.entityName = "LOAN";
+        this.entityId = null;
+        this.loanId = loanId;
+        this.href = "/loans/" + loanId + "/transactions/template?command=interestpaymentwaiver";
+        return this;
+    }
+
     public CommandWrapperBuilder refundLoanCharge(final Long loanId) {
         this.actionName = "CHARGEREFUND";
         this.entityName = "LOAN";
@@ -1132,6 +1143,15 @@ public class CommandWrapperBuilder {
 
     public CommandWrapperBuilder disburseLoanToSavingsApplication(final Long loanId) {
         this.actionName = "DISBURSETOSAVINGS";
+        this.entityName = "LOAN";
+        this.entityId = loanId;
+        this.loanId = loanId;
+        this.href = "/loans/" + loanId;
+        return this;
+    }
+
+    public CommandWrapperBuilder disburseWithoutAutoDownPayment(final Long loanId) {
+        this.actionName = "DISBURSEWITHOUTAUTODOWNPAYMENT";
         this.entityName = "LOAN";
         this.entityId = loanId;
         this.loanId = loanId;
@@ -3624,6 +3644,23 @@ public class CommandWrapperBuilder {
         return this;
     }
 
+    public CommandWrapperBuilder createExternalAssetOwnerLoanProductAttribute(final Long loanProductId) {
+        this.actionName = "CREATE";
+        this.entityName = "EXTERNAL_ASSET_OWNER_LOAN_PRODUCT_ATTRIBUTE";
+        this.productId = loanProductId;
+        this.href = "/external-asset-owners/loan-product/" + loanProductId + "/attributes";
+        return this;
+    }
+
+    public CommandWrapperBuilder updateExternalAssetOwnerLoanProductAttribute(final Long loanProductId, final Long attributeId) {
+        this.actionName = "UPDATE";
+        this.entityName = "EXTERNAL_ASSET_OWNER_LOAN_PRODUCT_ATTRIBUTE";
+        this.productId = loanProductId;
+        this.entityId = attributeId;
+        this.href = "/external-asset-owners/loan-product/" + loanProductId + "/attributes/" + attributeId;
+        return this;
+    }
+
     public CommandWrapperBuilder saleLoanToExternalAssetOwner(final Long loanId) {
         this.actionName = "SALE";
         this.entityName = "LOAN";
@@ -3694,6 +3731,40 @@ public class CommandWrapperBuilder {
         this.entityId = null;
         this.loanId = loanId;
         this.href = "/loans/" + loanId + "/delinquency-action";
+        return this;
+    }
+
+    public CommandWrapperBuilder createInterestPause(final long loanId) {
+        this.actionName = "CREATE";
+        this.entityName = "INTEREST_PAUSE";
+        this.loanId = loanId;
+        this.href = "/v1/loans/" + loanId + "/interest-pauses";
+        return this;
+    }
+
+    public CommandWrapperBuilder createInterestPauseByExternalId(final String loanExternalId) {
+        this.actionName = "CREATE";
+        this.entityName = "INTEREST_PAUSE";
+        this.loanExternalId = new ExternalId(loanExternalId);
+        this.href = "/v1/loans/external-id/" + loanExternalId + "/interest-pauses";
+        return this;
+    }
+
+    public CommandWrapperBuilder deleteInterestPause(final long loanId, final long variationId) {
+        this.actionName = "DELETE";
+        this.entityName = "INTEREST_PAUSE";
+        this.loanId = loanId;
+        this.entityId = variationId;
+        this.href = "/v1/loans/" + loanId + "/interest-pauses/" + variationId;
+        return this;
+    }
+
+    public CommandWrapperBuilder updateInterestPause(final long loanId, final long variationId) {
+        this.actionName = "UPDATE";
+        this.entityName = "INTEREST_PAUSE";
+        this.loanId = loanId;
+        this.entityId = variationId;
+        this.href = "/v1/loans/" + loanId + "/interest-pauses/" + variationId;
         return this;
     }
 }

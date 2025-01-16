@@ -48,17 +48,17 @@ import org.apache.fineract.batch.command.internal.CreateTransactionLoanCommandSt
 import org.apache.fineract.batch.command.internal.GetDatatableEntryByAppTableIdAndDataTableIdCommandStrategy;
 import org.apache.fineract.batch.domain.BatchRequest;
 import org.apache.fineract.batch.domain.BatchResponse;
+import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
+import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.integrationtests.common.BatchHelper;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.CollateralManagementHelper;
-import org.apache.fineract.integrationtests.common.GlobalConfigurationHelper;
 import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.integrationtests.common.charges.ChargesHelper;
 import org.apache.fineract.integrationtests.common.error.ErrorResponse;
 import org.apache.fineract.integrationtests.common.loans.LoanAccountLockHelper;
 import org.apache.fineract.integrationtests.common.loans.LoanProductTestBuilder;
-import org.apache.fineract.integrationtests.common.loans.LoanTestLifecycleExtension;
 import org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsAccountHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsProductHelper;
@@ -73,12 +73,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@ExtendWith(LoanTestLifecycleExtension.class)
-public class BatchApiTest {
+public class BatchApiTest extends BaseLoanIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(BatchApiTest.class);
 
@@ -113,12 +111,14 @@ public class BatchApiTest {
         this.requestSpec.header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey());
         this.responseSpec = new ResponseSpecBuilder().expectStatusCode(200).build();
         this.datatableHelper = new DatatableHelper(this.requestSpec, this.responseSpec);
-        GlobalConfigurationHelper.updateIsAutomaticExternalIdGenerationEnabled(this.requestSpec, this.responseSpec, true);
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID,
+                new PutGlobalConfigurationsRequest().enabled(true));
     }
 
     @AfterEach
     public void postActions() {
-        GlobalConfigurationHelper.updateIsAutomaticExternalIdGenerationEnabled(this.requestSpec, this.responseSpec, false);
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID,
+                new PutGlobalConfigurationsRequest().enabled(false));
     }
 
     /**
@@ -573,10 +573,10 @@ public class BatchApiTest {
 
         final BatchRequest applyLoanRequest = BatchHelper.applyLoanRequestWithClientId(applyLoanRequestId, clientId, productId);
 
-        final BatchRequest approveLoanRequest = BatchHelper.transistionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
+        final BatchRequest approveLoanRequest = BatchHelper.transitionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(10), "approve");
 
-        final BatchRequest disburseLoanRequest = BatchHelper.transistionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
+        final BatchRequest disburseLoanRequest = BatchHelper.transitionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(8), "disburse");
 
         final BatchRequest getLoanRequest = BatchHelper.getLoanByExternalIdRequest(getLoanRequestId, approveLoanRequestId,
@@ -2348,10 +2348,10 @@ public class BatchApiTest {
 
         final BatchRequest applyLoanRequest = BatchHelper.applyLoanRequestWithClientId(applyLoanRequestId, clientId, productId);
 
-        final BatchRequest approveLoanRequest = BatchHelper.transistionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
+        final BatchRequest approveLoanRequest = BatchHelper.transitionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(10), "approve");
 
-        final BatchRequest disburseLoanRequest = BatchHelper.transistionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
+        final BatchRequest disburseLoanRequest = BatchHelper.transitionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(8), "disburse");
 
         final BatchRequest updateLoanRequest = BatchHelper.modifyLoanByExternalIdRequest(updateLoanRequestId, approveLoanRequestId);
@@ -2414,10 +2414,10 @@ public class BatchApiTest {
 
         final BatchRequest applyLoanRequest = BatchHelper.applyLoanRequestWithClientId(applyLoanRequestId, clientId, productId);
 
-        final BatchRequest approveLoanRequest = BatchHelper.transistionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
+        final BatchRequest approveLoanRequest = BatchHelper.transitionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(10), "approve");
 
-        final BatchRequest disburseLoanRequest = BatchHelper.transistionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
+        final BatchRequest disburseLoanRequest = BatchHelper.transitionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(8), "disburse");
 
         final BatchRequest getLoanRequest = BatchHelper.getLoanByExternalIdRequest(getLoanRequestId, approveLoanRequestId,
@@ -2496,10 +2496,10 @@ public class BatchApiTest {
 
         final BatchRequest applyLoanRequest = BatchHelper.applyLoanRequestWithClientId(applyLoanRequestId, clientId, productId);
 
-        final BatchRequest approveLoanRequest = BatchHelper.transistionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
+        final BatchRequest approveLoanRequest = BatchHelper.transitionLoanStateByExternalId(approveLoanRequestId, applyLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(10), "approve");
 
-        final BatchRequest disburseLoanRequest = BatchHelper.transistionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
+        final BatchRequest disburseLoanRequest = BatchHelper.transitionLoanStateByExternalId(disburseLoanRequestId, approveLoanRequestId,
                 LocalDate.now(Utils.getZoneIdOfTenant()).minusDays(8), "disburse");
 
         final BatchRequest getLoanRequest = BatchHelper.getLoanByExternalIdRequest(getLoanRequestId, approveLoanRequestId,

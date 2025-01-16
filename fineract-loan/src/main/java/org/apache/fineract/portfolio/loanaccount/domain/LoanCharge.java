@@ -28,6 +28,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.LocalDate;
@@ -40,7 +41,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
+import lombok.Getter;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
@@ -54,14 +56,14 @@ import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargePaymentMode;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeWithoutMandatoryFieldException;
-import org.apache.fineract.portfolio.loanaccount.command.LoanChargeCommand;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidDetail;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInstallmentChargeData;
 
+@Getter
 @Entity
 @Table(name = "m_loan_charge", uniqueConstraints = { @UniqueConstraint(columnNames = { "external_id" }, name = "external_id") })
-public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
+public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "loan_id", referencedColumnName = "id", nullable = false)
@@ -306,10 +308,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
 
     }
 
-    public BigDecimal getAmountPercentageAppliedTo() {
-        return this.amountPercentageAppliedTo;
-    }
-
     private BigDecimal calculateAmountOutstanding(final MonetaryCurrency currency) {
         return getAmount(currency).minus(getAmountWaived(currency)).minus(getAmountPaid(currency)).getAmount();
     }
@@ -509,20 +507,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
         return value.compareTo(BigDecimal.ZERO) > 0;
     }
 
-    public LoanChargeCommand toCommand() {
-        return new LoanChargeCommand(getId(), this.charge.getId(), this.amount, this.chargeTime, this.chargeCalculation, getDueLocalDate());
-    }
-
     public LocalDate getDueLocalDate() {
-        return this.dueDate;
-    }
-
-    public LocalDate getDueDate() {
-        return this.dueDate;
-    }
-
-    public LocalDate getSubmittedOnDate() {
-        return submittedOnDate;
+        return this.dueDate; // TODO delete duplicated method
     }
 
     private boolean determineIfFullyPaid() {
@@ -602,11 +588,11 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public BigDecimal amount() {
-        return this.amount;
+        return this.amount; // TODO delete duplicated method
     }
 
     public BigDecimal amountOutstanding() {
-        return this.amountOutstanding;
+        return this.amountOutstanding; // TODO delete duplicated method
     }
 
     public Money getAmountOutstanding(final MonetaryCurrency currency) {
@@ -621,24 +607,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
         return this.loan.hasIdentifyOf(loanId);
     }
 
-    public boolean isDueForCollectionFromAndUpToAndIncluding(final LocalDate fromNotInclusive, final LocalDate upToAndInclusive) {
-        final LocalDate dueDate = getDueLocalDate();
-        return occursOnDayFromExclusiveAndUpToAndIncluding(fromNotInclusive, upToAndInclusive, dueDate);
-    }
-
-    public boolean isDueForCollectionFromIncludingAndUpToAndIncluding(final LocalDate fromAndInclusive, final LocalDate upToAndInclusive) {
-        final LocalDate dueDate = getDueLocalDate();
-        return occursOnDayFromAndUpToAndIncluding(fromAndInclusive, upToAndInclusive, dueDate);
-    }
-
-    private boolean occursOnDayFromExclusiveAndUpToAndIncluding(final LocalDate fromNotInclusive, final LocalDate upToAndInclusive,
-            final LocalDate target) {
-        return DateUtils.isAfter(target, fromNotInclusive) && !DateUtils.isAfter(target, upToAndInclusive);
-    }
-
-    private boolean occursOnDayFromAndUpToAndIncluding(final LocalDate fromAndInclusive, final LocalDate upToAndInclusive,
-            final LocalDate target) {
-        return target != null && !DateUtils.isBefore(target, fromAndInclusive) && !DateUtils.isAfter(target, upToAndInclusive);
+    public boolean isDueInPeriod(final LocalDate fromDate, final LocalDate toDate, boolean isFirstPeriod) {
+        return LoanRepaymentScheduleProcessingWrapper.isInPeriod(getDueLocalDate(), fromDate, toDate, isFirstPeriod);
     }
 
     public boolean isFeeCharge() {
@@ -663,14 +633,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
 
     public boolean isWaived() {
         return this.waived;
-    }
-
-    public BigDecimal getMinCap() {
-        return this.minCap;
-    }
-
-    public BigDecimal getMaxCap() {
-        return this.maxCap;
     }
 
     public boolean isPaidOrPartiallyPaid(final MonetaryCurrency currency) {
@@ -750,10 +712,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
         return this.charge.getCurrencyCode();
     }
 
-    public Charge getCharge() {
-        return this.charge;
-    }
-
     /*
      * @Override public boolean equals(final Object obj) { if (obj == null) { return false; } if (obj == this) { return
      * true; } if (obj.getClass() != getClass()) { return false; } final LoanCharge rhs = (LoanCharge) obj; return new
@@ -775,10 +733,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
 
     public ChargeCalculationType getChargeCalculation() {
         return ChargeCalculationType.fromInt(this.chargeCalculation);
-    }
-
-    public BigDecimal getPercentage() {
-        return this.percentage;
     }
 
     public void updateAmount(final BigDecimal amount) {
@@ -872,7 +826,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public BigDecimal amountOrPercentage() {
-        return this.amountOrPercentage;
+        return this.amountOrPercentage; // TODO delete duplicated method
     }
 
     public BigDecimal chargeAmount() {
@@ -927,12 +881,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
 
     }
 
-    public LoanOverdueInstallmentCharge getOverdueInstallmentCharge() {
-        return this.overdueInstallmentCharge;
-    }
-
     public LoanTrancheDisbursementCharge getTrancheDisbursementCharge() {
-        return this.loanTrancheDisbursementCharge;
+        return this.loanTrancheDisbursementCharge; // TODO delete duplicated method
     }
 
     public Money undoPaidOrPartiallyAmountBy(final Money incrementBy, final Integer installmentNumber, final Money feeAmount) {
@@ -981,14 +931,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
         return paidChargePerInstallment;
     }
 
-    public Set<LoanChargePaidBy> getLoanChargePaidBySet() {
-        return this.loanChargePaidBySet;
-    }
-
-    public Loan getLoan() {
-        return this.loan;
-    }
-
     public boolean isDisbursementCharge() {
         return ChargeTimeType.fromInt(this.chargeTime).equals(ChargeTimeType.DISBURSEMENT);
     }
@@ -1007,10 +949,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
 
     public void undoWaived() {
         this.waived = false;
-    }
-
-    public ExternalId getExternalId() {
-        return externalId;
     }
 
     public ChargeTimeType getChargeTimeType() {
@@ -1034,6 +972,11 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
         return dueDate;
     }
 
+    @NotNull
+    public List<LoanChargePaidBy> getLoanChargePaidBy(@NotNull Predicate<LoanChargePaidBy> filter) {
+        return getLoanChargePaidBySet().stream().filter(filter).toList();
+    }
+
     public LoanChargeData toData() {
         EnumOptionData chargeTimeTypeData = new EnumOptionData((long) getChargeTimeType().ordinal(), getChargeTimeType().getCode(),
                 String.valueOf(getChargeTimeType().getValue()));
@@ -1041,8 +984,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
                 getChargeCalculation().getCode(), String.valueOf(getChargeCalculation().getValue()));
         EnumOptionData chargePaymentModeData = new EnumOptionData((long) getChargePaymentMode().ordinal(), getChargePaymentMode().getCode(),
                 String.valueOf(getChargePaymentMode().getValue()));
-        Set<LoanInstallmentChargeData> loanInstallmentChargeDataSet = installmentCharges().stream().map(LoanInstallmentCharge::toData)
-                .collect(Collectors.toSet());
+        List<LoanInstallmentChargeData> loanInstallmentChargeDataList = installmentCharges().stream().map(LoanInstallmentCharge::toData)
+                .toList();
 
         return LoanChargeData.builder().id(getId()).chargeId(getCharge().getId()).name(getCharge().getName())
                 .currency(getCharge().toData().getCurrency()).amount(amount).amountPaid(amountPaid).amountWaived(amountWaived)
@@ -1050,6 +993,6 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom {
                 .submittedOnDate(submittedOnDate).dueDate(dueDate).chargeCalculationType(chargeCalculationTypeData).percentage(percentage)
                 .amountPercentageAppliedTo(amountPercentageAppliedTo).amountOrPercentage(amountOrPercentage).penalty(penaltyCharge)
                 .chargePaymentMode(chargePaymentModeData).paid(paid).waived(waived).loanId(loan.getId()).minCap(minCap).maxCap(maxCap)
-                .installmentChargeData(loanInstallmentChargeDataSet).externalId(externalId).build();
+                .installmentChargeData(loanInstallmentChargeDataList).externalId(externalId).build();
     }
 }

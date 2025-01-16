@@ -91,6 +91,7 @@ import org.apache.fineract.integrationtests.client.IntegrationTest;
 import org.apache.fineract.integrationtests.common.CommonConstants;
 import org.apache.fineract.integrationtests.common.PaymentTypeHelper;
 import org.apache.fineract.integrationtests.common.Utils;
+import org.apache.fineract.integrationtests.common.accounting.Account;
 import org.apache.fineract.portfolio.delinquency.domain.DelinquencyAction;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -108,12 +109,14 @@ public class LoanTransactionHelper extends IntegrationTest {
     private static final String UNDO_APPROVAL_LOAN_COMMAND = "undoApproval";
     private static final String DISBURSE_LOAN_COMMAND = "disburse";
     private static final String DISBURSE_LOAN_TO_SAVINGS_COMMAND = "disburseToSavings";
+    private static final String DISBURSE_LOAN_WITHOUT_AUTO_PAYMENT_COMMAND = "disburseWithoutAutoDownPayment";
     private static final String UNDO_DISBURSE_LOAN_COMMAND = "undoDisbursal";
     private static final String REJECT_LOAN_COMMAND = "reject";
     private static final String UNDO_LAST_DISBURSE_LOAN_COMMAND = "undolastdisbursal";
     private static final String WRITE_OFF_LOAN_COMMAND = "writeoff";
     private static final String WAIVE_INTEREST_COMMAND = "waiveinterest";
     private static final String MAKE_REPAYMENT_COMMAND = "repayment";
+    private static final String INTEREST_PAUSE_COMMAND = "interestpause";
     private static final String UNDO = "undo";
     private static final String LOANCHARGE_REFUND_REPAYMENT_COMMAND = "chargeRefund";
     private static final String CREDIT_BALANCE_REFUND_COMMAND = "creditBalanceRefund";
@@ -343,6 +346,11 @@ public class LoanTransactionHelper extends IntegrationTest {
         return ok(fineract().loanCharges.retrieveTemplate9(loanExternalId));
     }
 
+    public HashMap applyLoan(final String payload, final ResponseSpecification responseSpec) {
+        final String postURLForLoan = "/fineract-provider/api/v1/loans?" + Utils.TENANT_IDENTIFIER;
+        return Utils.performServerPost(this.requestSpec, this.responseSpec, postURLForLoan, payload, null);
+    }
+
     public List getRepaymentTemplate(final Integer loanId) {
         final String GET_REPAYMENTS_URL = "/fineract-provider/api/v1/loans/" + loanId + "/transactions/template?command=repayment&"
                 + Utils.TENANT_IDENTIFIER;
@@ -415,6 +423,12 @@ public class LoanTransactionHelper extends IntegrationTest {
 
     public HashMap disburseLoanWithTransactionAmount(final String date, final Integer loanID, final String transactionAmount) {
         return performLoanTransaction(createLoanOperationURL(DISBURSE_LOAN_COMMAND, loanID),
+                getDisburseLoanAsJSON(date, transactionAmount, null));
+    }
+
+    public HashMap disburseLoanWithTransactionAmountAndWithoutAutoPayment(final String date, final Integer loanID,
+            final String transactionAmount) {
+        return performLoanTransaction(createLoanOperationURL(DISBURSE_LOAN_WITHOUT_AUTO_PAYMENT_COMMAND, loanID),
                 getDisburseLoanAsJSON(date, transactionAmount, null));
     }
 
@@ -587,6 +601,62 @@ public class LoanTransactionHelper extends IntegrationTest {
 
     public PostLoansLoanIdTransactionsResponse makeLoanRepayment(final Long loanId, final PostLoansLoanIdTransactionsRequest request) {
         return ok(fineract().loanTransactions.executeLoanTransaction(loanId, request, "repayment"));
+    }
+
+    public PostLoansLoanIdTransactionsResponse makeLoanRepayment(final Long loanId, final PostLoansLoanIdTransactionsRequest request,
+            final String user, final String pass) {
+        return ok(newFineract(user, pass).loanTransactions.executeLoanTransaction(loanId, request, "repayment"));
+    }
+
+    public PostLoansLoanIdTransactionsResponse createInterestPauseByLoanId(final String startDate, final String endDate,
+            final String dateFormat, final String locale, final Integer loanID) {
+        log.info("Creating interest pause for Loan {} from {} to {} with dateFormat {} and locale {}", loanID, startDate, endDate,
+                dateFormat, locale);
+        String body = getInterestPauseBodyAsJSON(startDate, endDate, dateFormat, locale);
+        return postLoanTransaction(createInterestPause(INTEREST_PAUSE_COMMAND, loanID), body);
+    }
+
+    public PostLoansLoanIdTransactionsResponse createInterestPauseByExternalId(final String startDate, final String endDate,
+            final String dateFormat, final String locale, final String externalId) {
+        log.info("Creating interest pause for Loan {} from {} to {} with dateFormat {} and locale {}", externalId, startDate, endDate,
+                dateFormat, locale);
+        String body = getInterestPauseBodyAsJSON(startDate, endDate, dateFormat, locale);
+        return postLoanTransaction(createInterestPause(INTEREST_PAUSE_COMMAND, externalId), body);
+    }
+
+    public PostLoansLoanIdTransactionsResponse updateInterestPauseByLoanId(final Long termVariationId, final String startDate,
+            final String endDate, final String dateFormat, final String locale, final Integer loanID) {
+        log.info("Updating interest pause for Loan {} with Term Variation ID {}: startDate={} endDate={} dateFormat={} locale={}", loanID,
+                termVariationId, startDate, endDate, dateFormat, locale);
+        String body = getInterestPauseBodyAsJSON(startDate, endDate, dateFormat, locale);
+        return putLoanTransaction(updateInterestPause(termVariationId, loanID), body);
+    }
+
+    public void deleteInterestPauseByLoanId(final Long termVariationId, final Integer loanID) {
+        log.info("Deleting interest pause for Loan ID {} with Term Variation ID {}", loanID, termVariationId);
+        deleteLoanTransaction(deleteInterestPause(termVariationId, loanID));
+    }
+
+    public String retrieveInterestPauseByLoanId(final Integer loanID) {
+        log.info("Retrieving interest pauses for Loan ID {}", loanID);
+        String url = retrieveInterestPause(loanID);
+        return Utils.performServerGet(requestSpec, responseSpec, url);
+    }
+
+    public String retrieveInterestPauseByExternalId(final String externalId) {
+        log.info("Retrieving interest pauses for External ID {}", externalId);
+        String url = retrieveInterestPause(externalId);
+        return Utils.performServerGet(requestSpec, responseSpec, url);
+    }
+
+    public PostLoansLoanIdTransactionsResponse makeInterestPaymentWaiver(final Long loanId,
+            final PostLoansLoanIdTransactionsRequest request) {
+        return ok(fineract().loanTransactions.executeLoanTransaction(loanId, request, "interestPaymentWaiver"));
+    }
+
+    public PostLoansLoanIdTransactionsResponse makeInterestPaymentWaiver(final String loanExternalId,
+            final PostLoansLoanIdTransactionsRequest request) {
+        return ok(fineract().loanTransactions.executeLoanTransaction1(loanExternalId, request, "interestPaymentWaiver"));
     }
 
     public PostLoansLoanIdTransactionsResponse reAge(final Long loanId, final PostLoansLoanIdTransactionsRequest request) {
@@ -1111,7 +1181,7 @@ public class LoanTransactionHelper extends IntegrationTest {
         return new Gson().toJson(map);
     }
 
-    private String getApproveLoanAsJSON(final String approvalDate) {
+    public String getApproveLoanAsJSON(final String approvalDate) {
         return getApproveLoanAsJSON(approvalDate, null, null, null);
     }
 
@@ -1187,6 +1257,16 @@ public class LoanTransactionHelper extends IntegrationTest {
         map.put("transactionDate", transactionDate);
         map.put("transactionAmount", transactionAmount.toString());
         map.put("note", "Repayment Made!!!");
+        return new Gson().toJson(map);
+    }
+
+    private String getInterestPauseBodyAsJSON(final String startDate, final String endDate, final String dateFormat, final String locale) {
+        final HashMap<String, String> map = new HashMap<>();
+        map.put("startDate", startDate);
+        map.put("endDate", endDate);
+        map.put("dateFormat", dateFormat);
+        map.put("locale", locale);
+
         return new Gson().toJson(map);
     }
 
@@ -1375,12 +1455,37 @@ public class LoanTransactionHelper extends IntegrationTest {
         return new Gson().toJson(map);
     }
 
-    private String createLoanOperationURL(final String command, final Integer loanID) {
+    public String createLoanOperationURL(final String command, final Integer loanID) {
         return "/fineract-provider/api/v1/loans/" + loanID + "?command=" + command + "&" + Utils.TENANT_IDENTIFIER;
     }
 
     private String createLoanTransactionURL(final String command, final Integer loanID) {
         return "/fineract-provider/api/v1/loans/" + loanID + "/transactions?command=" + command + "&" + Utils.TENANT_IDENTIFIER;
+    }
+
+    private String createInterestPause(final String command, final Integer loanID) {
+        return "/fineract-provider/api/v1/loans/" + loanID + "/interest-pauses?command=" + command + "&" + Utils.TENANT_IDENTIFIER;
+    }
+
+    private String createInterestPause(final String command, final String externalId) {
+        return "/fineract-provider/api/v1/loans/external-id/" + externalId + "/interest-pauses?command=" + command + "&"
+                + Utils.TENANT_IDENTIFIER;
+    }
+
+    private String retrieveInterestPause(final Integer loanID) {
+        return "/fineract-provider/api/v1/loans/" + loanID + "/interest-pauses?" + Utils.TENANT_IDENTIFIER;
+    }
+
+    private String retrieveInterestPause(final String externalId) {
+        return "/fineract-provider/api/v1/loans/external-id/" + externalId + "/interest-pauses?" + Utils.TENANT_IDENTIFIER;
+    }
+
+    private String updateInterestPause(final Long termVariationId, final Integer loanID) {
+        return "/fineract-provider/api/v1/loans/" + loanID + "/interest-pauses/" + termVariationId + "?" + Utils.TENANT_IDENTIFIER;
+    }
+
+    private String deleteInterestPause(final Long termVariationId, final Integer loanID) {
+        return "/fineract-provider/api/v1/loans/" + loanID + "/interest-pauses/" + termVariationId + "?" + Utils.TENANT_IDENTIFIER;
     }
 
     private String createInteroperationLoanTransactionURL(final String accountNo) {
@@ -1429,6 +1534,15 @@ public class LoanTransactionHelper extends IntegrationTest {
         return GSON.fromJson(response, PostLoansLoanIdTransactionsResponse.class);
     }
 
+    private PostLoansLoanIdTransactionsResponse putLoanTransaction(final String putURLForLoanTransaction, final String jsonToBeSent) {
+        final String response = Utils.performServerPut(this.requestSpec, this.responseSpec, putURLForLoanTransaction, jsonToBeSent);
+        return GSON.fromJson(response, PostLoansLoanIdTransactionsResponse.class);
+    }
+
+    private void deleteLoanTransaction(final String deleteURLForLoanTransaction) {
+        Utils.performServerDelete(this.requestSpec, this.responseSpec, deleteURLForLoanTransaction, null);
+    }
+
     private Object performLoanTransaction(final String postURLForLoanTransaction, final String jsonToBeSent,
             ResponseSpecification responseValidationError) {
 
@@ -1460,6 +1574,15 @@ public class LoanTransactionHelper extends IntegrationTest {
 
     public HashMap getPrepayAmount(final RequestSpecification requestSpec, final ResponseSpecification responseSpec, final Integer loanID) {
         final String URL = "/fineract-provider/api/v1/loans/" + loanID + "/transactions/template?command=prepayLoan&"
+                + Utils.TENANT_IDENTIFIER;
+        final HashMap response = Utils.performServerGet(requestSpec, responseSpec, URL, "");
+        return response;
+    }
+
+    public HashMap getPrepayAmount(final RequestSpecification requestSpec, final ResponseSpecification responseSpec, final Integer loanID,
+            final LocalDate transactionDate) {
+        final String URL = "/fineract-provider/api/v1/loans/" + loanID
+                + "/transactions/template?command=prepayLoan&locale=en&dateFormat=yyyy-MM-dd&transactionDate=" + transactionDate + "&"
                 + Utils.TENANT_IDENTIFIER;
         final HashMap response = Utils.performServerGet(requestSpec, responseSpec, URL, "");
         return response;
@@ -1678,6 +1801,14 @@ public class LoanTransactionHelper extends IntegrationTest {
         return Utils.performServerGet(requestSpec, responseSpec, GET_LOAN_TRANSACTION_URL, jsonReturn);
     }
 
+    public Long applyInterestRefundLoanTransaction(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
+            final Long loanId, final String jsonBody) {
+        final String POST_LOAN_TRANSACTION_URL = "/fineract-provider/api/v1/internal/loan/" + loanId + "/apply-interest-refund/" + "?"
+                + Utils.TENANT_IDENTIFIER;
+        final String reponse = Utils.performServerPost(requestSpec, responseSpec, POST_LOAN_TRANSACTION_URL, jsonBody);
+        return Long.valueOf(reponse);
+    }
+
     public void printRepaymentSchedule(GetLoansLoanIdResponse getLoansLoanIdResponse) {
         GetLoansLoanIdRepaymentSchedule getLoanRepaymentSchedule = getLoansLoanIdResponse.getRepaymentSchedule();
         if (getLoanRepaymentSchedule != null) {
@@ -1692,7 +1823,7 @@ public class LoanTransactionHelper extends IntegrationTest {
     public void printDelinquencyData(GetLoansLoanIdResponse getLoansLoanIdResponse) {
         GetLoansLoanIdDelinquencySummary getLoansLoanIdCollectionData = getLoansLoanIdResponse.getDelinquent();
         if (getLoansLoanIdCollectionData != null) {
-            log.info("Loan Delinquency {}", getLoansLoanIdCollectionData.toString());
+            log.info("Loan Delinquency {}", getLoansLoanIdCollectionData);
         }
     }
 
@@ -1817,6 +1948,11 @@ public class LoanTransactionHelper extends IntegrationTest {
         final String chargebackPayload = new Gson().toJson(map);
         log.info("{}", chargebackPayload);
         return chargebackPayload;
+    }
+
+    public GetLoansLoanIdTransactionsTemplateResponse retrieveTransactionTemplate(Long loanId, String command, String dateFormat,
+            String transactionDate, String locale) {
+        return ok(fineract().loanTransactions.retrieveTransactionTemplate(loanId, command, dateFormat, transactionDate, locale));
     }
 
     public GetLoansLoanIdTransactionsTemplateResponse retrieveTransactionTemplate(String loanExternalIdStr, String command,
@@ -2003,4 +2139,41 @@ public class LoanTransactionHelper extends IntegrationTest {
         return Utils.performServerPut(requestSpec, responseSpec, UPDATE_LOAN_PRODUCT_URL, request, null);
     }
 
+    public PostLoansLoanIdResponse undoApprovalForLoan(Long loanId, PostLoansLoanIdRequest request) {
+        return ok(fineract().loans.stateTransitions(loanId, request, "undoapproval"));
+    }
+
+    public PutLoansLoanIdResponse modifyApplicationForLoan(final Long loanId, final String command, final PutLoansLoanIdRequest request) {
+        return ok(fineract().loans.modifyLoanApplication(loanId, request, command));
+    }
+
+    public PostLoansResponse calculateRepaymentScheduleForApplyLoan(PostLoansRequest request, String command) {
+        return ok(fineract().loans.calculateLoanScheduleOrSubmitLoanApplication(request, command));
+    }
+
+    public Integer createLoanProduct(final String inMultiplesOf, final String digitsAfterDecimal, final String repaymentStrategy,
+            final String accountingRule, final Account... accounts) {
+        log.info("------------------------------CREATING NEW LOAN PRODUCT ---------------------------------------");
+        final String loanProductJSON = new LoanProductTestBuilder().withPrincipal("10000000.00").withNumberOfRepayments("24")
+                .withRepaymentAfterEvery("1").withRepaymentTypeAsMonth().withinterestRatePerPeriod("2")
+                .withInterestRateFrequencyTypeAsMonths().withRepaymentStrategy(repaymentStrategy)
+                .withAmortizationTypeAsEqualPrincipalPayment().withInterestTypeAsDecliningBalance()
+                .currencyDetails(digitsAfterDecimal, inMultiplesOf).withAccounting(accountingRule, accounts).build(null);
+        return getLoanProductId(loanProductJSON);
+    }
+
+    public Integer applyForLoanApplicationWithPaymentStrategyAndPastMonth(final Integer clientID, final Integer loanProductID,
+            List<HashMap> charges, final String savingsId, String principal, final String repaymentStrategy, final String submittedOnDate,
+            final String disbursementDate) {
+        log.info("--------------------------------APPLYING FOR LOAN APPLICATION--------------------------------");
+
+        final String loanApplicationJSON = new LoanApplicationTestBuilder().withPrincipal(principal).withLoanTermFrequency("6")
+                .withLoanTermFrequencyAsMonths().withNumberOfRepayments("6").withRepaymentEveryAfter("1")
+                .withRepaymentFrequencyTypeAsMonths().withInterestRatePerPeriod("2").withAmortizationTypeAsEqualInstallments()
+                .withInterestTypeAsFlatBalance().withInterestCalculationPeriodTypeSameAsRepaymentPeriod()
+                .withExpectedDisbursementDate(disbursementDate).withSubmittedOnDate(submittedOnDate)
+                .withRepaymentStrategy(repaymentStrategy).withCharges(charges)
+                .build(clientID.toString(), loanProductID.toString(), savingsId);
+        return getLoanId(loanApplicationJSON);
+    }
 }

@@ -53,6 +53,7 @@ import org.apache.fineract.infrastructure.reportmailingjob.ReportMailingJobConst
 import org.apache.fineract.infrastructure.reportmailingjob.data.ReportMailingJobData;
 import org.apache.fineract.infrastructure.reportmailingjob.service.ReportMailingJobReadPlatformService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.apache.fineract.infrastructure.security.service.SqlValidator;
 import org.springframework.stereotype.Component;
 
 @Path("/v1/" + ReportMailingJobConstants.REPORT_MAILING_JOB_RESOURCE_NAME)
@@ -66,6 +67,7 @@ public class ReportMailingJobApiResource {
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     private final DefaultToApiJsonSerializer<ReportMailingJobData> reportMailingToApiJsonSerializer;
     private final ReportMailingJobReadPlatformService reportMailingJobReadPlatformService;
+    private final SqlValidator sqlValidator;
 
     @POST
     @Consumes({ MediaType.APPLICATION_JSON })
@@ -109,7 +111,6 @@ public class ReportMailingJobApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Delete a Report Mailing Job", description = "")
-    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = ReportMailingJobApiResourceSwagger.DeleteReportMailingJobsRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = ReportMailingJobApiResourceSwagger.DeleteReportMailingJobsResponse.class))) })
     public String deleteReportMailingJob(@PathParam("entityId") @Parameter(description = "entityId") final Long entityId,
@@ -184,7 +185,10 @@ public class ReportMailingJobApiResource {
                 .validateHasReadPermission(ReportMailingJobConstants.REPORT_MAILING_JOB_ENTITY_NAME);
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        final SearchParameters searchParameters = SearchParameters.fromReportMailingJob(offset, limit, orderBy, sortOrder);
+        sqlValidator.validate(orderBy);
+        sqlValidator.validate(sortOrder);
+        final SearchParameters searchParameters = SearchParameters.builder().limit(limit).offset(offset).orderBy(orderBy)
+                .sortOrder(sortOrder).build();
         final Page<ReportMailingJobData> reportMailingJobData = this.reportMailingJobReadPlatformService
                 .retrieveAllReportMailingJobs(searchParameters);
 

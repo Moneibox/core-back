@@ -19,7 +19,7 @@
 package org.apache.fineract.portfolio.loanproduct.domain;
 
 import java.math.BigDecimal;
-import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 
@@ -28,17 +28,17 @@ import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
  */
 public interface LoanProductMinimumRepaymentScheduleRelatedDetail {
 
-    MonetaryCurrency getCurrency();
+    CurrencyData getCurrencyData();
 
     Money getPrincipal();
 
-    Integer graceOnInterestCharged();
+    Integer getGraceOnInterestCharged();
 
-    Integer graceOnInterestPayment();
+    Integer getGraceOnInterestPayment();
 
-    Integer graceOnPrincipalPayment();
+    Integer getGraceOnPrincipalPayment();
 
-    Integer recurringMoratoriumOnPrincipalPeriods();
+    Integer getRecurringMoratoriumOnPrincipalPeriods();
 
     Money getInArrearsTolerance();
 
@@ -60,5 +60,9 @@ public interface LoanProductMinimumRepaymentScheduleRelatedDetail {
 
     AmortizationMethod getAmortizationMethod();
 
-    Integer getGraceOnDueDate();
+    Integer getGraceOnArrearsAgeing();
+
+    Integer getDaysInMonthType();
+
+    Integer getDaysInYearType();
 }

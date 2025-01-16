@@ -27,6 +27,7 @@ import com.google.gson.reflect.TypeToken;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.lang.reflect.Type;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.IdempotentCommandProcessFailedException;
 import org.apache.fineract.infrastructure.core.exception.IdempotentCommandProcessSucceedException;
 import org.apache.fineract.infrastructure.core.exception.IdempotentCommandProcessUnderProcessingException;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.GoogleGsonSerializerHelper;
 import org.apache.fineract.infrastructure.core.serialization.ToApiJsonSerializer;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
@@ -132,7 +134,7 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
             commandSource.setResultStatusCode(statusCode);
             commandSource.setResult(errorInfo.getMessage());
             if (statusCode != SC_OK) {
-                commandSource.setStatus(ERROR);
+                commandSource.setStatus(ERROR.getValue());
             }
             if (!isEnclosingTransaction) { // TODO: temporary solution
                 commandSource = commandSourceService.saveResultNewTransaction(commandSource);
@@ -145,8 +147,8 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
 
         commandSource.setResultStatusCode(SC_OK);
         commandSource.updateForAudit(result);
-        commandSource.setResult(toApiJsonSerializer.serializeResult(result));
-        commandSource.setStatus(PROCESSED);
+        commandSource.setResult(toApiResultJsonSerializer.serializeResult(result));
+        commandSource.setStatus(PROCESSED.getValue());
         commandSource = commandSourceService.saveResultSameTransaction(commandSource);
         storeCommandIdInContext(commandSource); // Store command id as a request attribute
 
@@ -247,6 +249,16 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
             } else {
                 throw new UnsupportedCommandException(wrapper.commandName());
             }
+        } else if (wrapper.isInterestPauseResource()) {
+            if (wrapper.isInterestPauseCreateResource()) {
+                handler = applicationContext.getBean("createInterestPauseCommandHandler", NewCommandSourceHandler.class);
+            } else if (wrapper.isInterestPauseUpdateResource()) {
+                handler = applicationContext.getBean("updateInterestPauseCommandHandler", NewCommandSourceHandler.class);
+            } else if (wrapper.isInterestPauseDeleteResource()) {
+                handler = applicationContext.getBean("deleteInterestPauseCommandHandler", NewCommandSourceHandler.class);
+            } else {
+                throw new UnsupportedCommandException(wrapper.commandName());
+            }
         } else {
             handler = commandHandlerProvider.getHandler(wrapper.entityName(), wrapper.actionName());
         }
@@ -261,56 +273,67 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
         return isMakerChecker && !user.isCheckerSuperUser();
     }
 
-    private void publishHookEvent(final String entityName, final String actionName, JsonCommand command, final Object result) {
-        try {
-            final AppUser appUser = context.authenticatedUser(CommandWrapper.wrap(actionName, entityName, null, null));
+    protected void publishHookEvent(final String entityName, final String actionName, JsonCommand command, final Object result) {
 
-            final HookEventSource hookEventSource = new HookEventSource(entityName, actionName);
+        final AppUser appUser = context.authenticatedUser(CommandWrapper.wrap(actionName, entityName, null, null));
 
-            // TODO: Add support for publishing array events
-            if (command.json() != null && command.json().startsWith("{")) {
-                Type type = new TypeToken<Map<String, Object>>() {
+        final HookEventSource hookEventSource = new HookEventSource(entityName, actionName);
 
-                }.getType();
-                Map<String, Object> myMap = gson.fromJson(command.json(), type);
+        // TODO: Add support for publishing array events
+        if (command.json() != null) {
+            Type type = new TypeToken<Map<String, Object>>() {
 
-                Map<String, Object> reqmap = new HashMap<>();
-                reqmap.put("entityName", entityName);
-                reqmap.put("actionName", actionName);
-                reqmap.put("createdBy", context.authenticatedUser().getId());
-                reqmap.put("createdByName", context.authenticatedUser().getUsername());
-                reqmap.put("createdByFullName", context.authenticatedUser().getDisplayName());
+            }.getType();
 
-                reqmap.put("request", myMap);
-                if (result instanceof CommandProcessingResult) {
-                    CommandProcessingResult resultCopy = CommandProcessingResult
-                            .fromCommandProcessingResult((CommandProcessingResult) result);
+            Map<String, Object> myMap;
 
-                    reqmap.put("officeId", resultCopy.getOfficeId());
-                    reqmap.put("clientId", resultCopy.getClientId());
-                    resultCopy.setOfficeId(null);
-                    reqmap.put("response", resultCopy);
-                } else if (result instanceof ErrorInfo ex) {
-                    reqmap.put("status", "Exception");
+            try {
+                myMap = gson.fromJson(command.json(), type);
+            } catch (Exception e) {
+                throw new PlatformApiDataValidationException("error.msg.invalid.json", "The provided JSON is invalid.", new ArrayList<>(),
+                        e);
+            }
 
-                    Map<String, Object> errorMap = gson.fromJson(ex.getMessage(), type);
-                    errorMap.put("errorCode", ex.getErrorCode());
-                    errorMap.put("statusCode", ex.getStatusCode());
+            Map<String, Object> reqmap = new HashMap<>();
+            reqmap.put("entityName", entityName);
+            reqmap.put("actionName", actionName);
+            reqmap.put("createdBy", context.authenticatedUser().getId());
+            reqmap.put("createdByName", context.authenticatedUser().getUsername());
+            reqmap.put("createdByFullName", context.authenticatedUser().getDisplayName());
 
-                    reqmap.put("response", errorMap);
+            reqmap.put("request", myMap);
+            if (result instanceof CommandProcessingResult) {
+                CommandProcessingResult resultCopy = CommandProcessingResult.fromCommandProcessingResult((CommandProcessingResult) result);
+
+                reqmap.put("officeId", resultCopy.getOfficeId());
+                reqmap.put("clientId", resultCopy.getClientId());
+                resultCopy.setOfficeId(null);
+                reqmap.put("response", resultCopy);
+            } else if (result instanceof ErrorInfo ex) {
+                reqmap.put("status", "Exception");
+
+                Map<String, Object> errorMap = new HashMap<>();
+
+                try {
+                    errorMap = gson.fromJson(ex.getMessage(), type);
+                } catch (Exception e) {
+                    errorMap.put("errorMessage", ex.getMessage());
                 }
 
-                reqmap.put("timestamp", Instant.now().toString());
+                errorMap.put("errorCode", ex.getErrorCode());
+                errorMap.put("statusCode", ex.getStatusCode());
 
-                final String serializedResult = toApiResultJsonSerializer.serialize(reqmap);
-
-                final HookEvent applicationEvent = new HookEvent(hookEventSource, serializedResult, appUser,
-                        ThreadLocalContextUtil.getContext());
-
-                applicationContext.publishEvent(applicationEvent);
+                reqmap.put("response", errorMap);
             }
-        } catch (Exception e) {
-            log.error("Error", e);
+
+            reqmap.put("timestamp", Instant.now().toString());
+
+            final String serializedResult = toApiJsonSerializer.serialize(reqmap);
+
+            final HookEvent applicationEvent = new HookEvent(hookEventSource, serializedResult, appUser,
+                    ThreadLocalContextUtil.getContext());
+
+            applicationContext.publishEvent(applicationEvent);
         }
     }
 }

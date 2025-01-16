@@ -21,11 +21,11 @@ package org.apache.fineract.infrastructure.jobs.filter;
 import static org.apache.fineract.batch.command.CommandStrategyUtils.isRelativeUrlVersioned;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
-import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -46,6 +46,7 @@ import org.apache.fineract.cob.service.LoanAccountLockService;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
+import org.apache.fineract.infrastructure.core.http.BodyCachingHttpServletRequestWrapper;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.infrastructure.jobs.exception.LoanIdsHardLockedException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -54,6 +55,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.GroupLoanIndividualMonit
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.rescheduleloan.domain.LoanRescheduleRequestRepository;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
@@ -61,7 +63,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Component
 @Conditional(LoanCOBEnabledCondition.class)
-public class LoanCOBFilterHelper {
+public class LoanCOBFilterHelper implements InitializingBean {
 
     private final GLIMAccountInfoRepository glimAccountInfoRepository;
     private final LoanAccountLockService loanAccountLockService;
@@ -72,7 +74,7 @@ public class LoanCOBFilterHelper {
     private final RetrieveLoanIdService retrieveLoanIdService;
 
     private final LoanRescheduleRequestRepository loanRescheduleRequestRepository;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final List<HttpMethod> HTTP_METHODS = List.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.DELETE);
 
@@ -111,7 +113,7 @@ public class LoanCOBFilterHelper {
         return LOAN_PATH_PATTERN.matcher(pathInfo).matches() && pathInfo.contains("/v1/rescheduleloans/");
     }
 
-    public boolean isOnApiList(HttpServletRequest request) throws IOException {
+    public boolean isOnApiList(BodyCachingHttpServletRequestWrapper request) throws IOException {
         String pathInfo = request.getPathInfo();
         String method = request.getMethod();
         if (StringUtils.isBlank(pathInfo)) {
@@ -124,7 +126,7 @@ public class LoanCOBFilterHelper {
         }
     }
 
-    private boolean isBatchApiMatching(HttpServletRequest request) throws IOException {
+    private boolean isBatchApiMatching(BodyCachingHttpServletRequestWrapper request) throws IOException {
         for (BatchRequest batchRequest : getBatchRequests(request)) {
             String method = batchRequest.getMethod();
             String pathInfo = batchRequest.getRelativeUrl();
@@ -135,8 +137,10 @@ public class LoanCOBFilterHelper {
         return false;
     }
 
-    private List<BatchRequest> getBatchRequests(HttpServletRequest request) throws IOException {
+    private List<BatchRequest> getBatchRequests(BodyCachingHttpServletRequestWrapper request) throws IOException {
         List<BatchRequest> batchRequests = objectMapper.readValue(request.getInputStream(), new TypeReference<>() {});
+        // since we read body, we have to reset so the upcoming readings are successful
+        request.resetStream();
         for (BatchRequest batchRequest : batchRequests) {
             String pathInfo = "/" + batchRequest.getRelativeUrl();
             if (!isRelativeUrlVersioned(batchRequest.getRelativeUrl())) {
@@ -182,6 +186,14 @@ public class LoanCOBFilterHelper {
         return loanIds.stream().anyMatch(loanAccountLockService::isLoanHardLocked);
     }
 
+    private boolean isLockOverrulable(Long... loanIds) {
+        return isLockOverrulable(Arrays.asList(loanIds));
+    }
+
+    private boolean isLockOverrulable(List<Long> loanIds) {
+        return loanIds.stream().anyMatch(loanAccountLockService::isLockOverrulable);
+    }
+
     public boolean isLoanBehind(List<Long> loanIds) {
         List<LoanIdAndLastClosedBusinessDate> loanIdAndLastClosedBusinessDates = new ArrayList<>();
         List<List<Long>> partitions = Lists.partition(loanIds, fineractProperties.getQuery().getInClauseParameterSizeLimit());
@@ -190,7 +202,7 @@ public class LoanCOBFilterHelper {
         return CollectionUtils.isNotEmpty(loanIdAndLastClosedBusinessDates);
     }
 
-    public List<Long> calculateRelevantLoanIds(HttpServletRequest request) throws IOException {
+    public List<Long> calculateRelevantLoanIds(BodyCachingHttpServletRequestWrapper request) throws IOException {
         String pathInfo = request.getPathInfo();
         if (isBatchApi(pathInfo)) {
             return getLoanIdsFromBatchApi(request);
@@ -199,7 +211,7 @@ public class LoanCOBFilterHelper {
         }
     }
 
-    private List<Long> getLoanIdsFromBatchApi(HttpServletRequest request) throws IOException {
+    private List<Long> getLoanIdsFromBatchApi(BodyCachingHttpServletRequestWrapper request) throws IOException {
         List<Long> loanIds = new ArrayList<>();
         for (BatchRequest batchRequest : getBatchRequests(request)) {
             // check the URL for Loan related ID
@@ -213,7 +225,7 @@ public class LoanCOBFilterHelper {
             // check the body for Loan ID
             Long loanId = getTopLevelLoanIdFromBatchRequest(batchRequest);
             if (loanId != null) {
-                if (isLoanHardLocked(loanId)) {
+                if (isLoanHardLocked(loanId) && !isLockOverrulable(loanId)) {
                     throw new LoanIdsHardLockedException(loanId);
                 } else {
                     loanIds.add(loanId);
@@ -236,7 +248,7 @@ public class LoanCOBFilterHelper {
 
     private List<Long> getLoanIdsFromApi(String pathInfo) {
         List<Long> loanIds = getLoanIdList(pathInfo);
-        if (isLoanHardLocked(loanIds)) {
+        if (isLoanHardLocked(loanIds) && !isLockOverrulable(loanIds)) {
             throw new LoanIdsHardLockedException(loanIds.get(0));
         } else {
             return loanIds;
@@ -259,4 +271,10 @@ public class LoanCOBFilterHelper {
     public void executeInlineCob(List<Long> loanIds) {
         inlineLoanCOBExecutorService.execute(loanIds, JOB_NAME);
     }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        objectMapper.configure(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature(), true);
+    }
+
 }

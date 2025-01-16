@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
+import org.apache.fineract.infrastructure.core.service.JdbcTemplateFactory;
 import org.apache.fineract.infrastructure.core.service.tenant.TenantDetailsService;
 import org.apache.fineract.infrastructure.event.external.exception.ExternalEventConfigurationNotFoundException;
 import org.apache.fineract.infrastructure.event.external.service.validation.ExternalEventSourceService;
@@ -101,7 +102,10 @@ public class ExternalEventConfigurationValidationServiceTest {
                 "LoanAccountDelinquencyPauseChangedBusinessEvent", "LoanAccountCustomSnapshotBusinessEvent",
                 "LoanReAgeTransactionBusinessEvent", "LoanUndoReAgeTransactionBusinessEvent", "LoanReAmortizeTransactionBusinessEvent",
                 "LoanUndoReAmortizeTransactionBusinessEvent", "LoanReAgeBusinessEvent", "LoanUndoReAgeBusinessEvent",
-                "LoanReAmortizeBusinessEvent", "LoanUndoReAmortizeBusinessEvent");
+                "LoanReAmortizeBusinessEvent", "LoanUndoReAmortizeBusinessEvent", "LoanTransactionInterestPaymentWaiverPreBusinessEvent",
+                "LoanTransactionInterestPaymentWaiverPostBusinessEvent", "LoanTransactionAccrualActivityPostBusinessEvent",
+                "LoanTransactionAccrualActivityPreBusinessEvent", "LoanTransactionInterestRefundPostBusinessEvent",
+                "LoanTransactionInterestRefundPreBusinessEvent", "LoanAccrualAdjustmentTransactionBusinessEvent");
 
         List<FineractPlatformTenant> tenants = Arrays
                 .asList(new FineractPlatformTenant(1L, "default", "Default Tenant", "Europe/Budapest", null));
@@ -184,7 +188,10 @@ public class ExternalEventConfigurationValidationServiceTest {
                 "LoanAccountDelinquencyPauseChangedBusinessEvent", "LoanAccountCustomSnapshotBusinessEvent",
                 "LoanReAgeTransactionBusinessEvent", "LoanUndoReAgeTransactionBusinessEvent", "LoanReAmortizeTransactionBusinessEvent",
                 "LoanUndoReAmortizeTransactionBusinessEvent", "LoanReAgeBusinessEvent", "LoanUndoReAgeBusinessEvent",
-                "LoanReAmortizeBusinessEvent", "LoanUndoReAmortizeBusinessEvent");
+                "LoanReAmortizeBusinessEvent", "LoanUndoReAmortizeBusinessEvent", "LoanTransactionInterestPaymentWaiverPreBusinessEvent",
+                "LoanTransactionInterestPaymentWaiverPostBusinessEvent", "LoanTransactionAccrualActivityPostBusinessEvent",
+                "LoanTransactionAccrualActivityPreBusinessEvent", "LoanTransactionInterestRefundPostBusinessEvent",
+                "LoanTransactionInterestRefundPreBusinessEvent", "LoanAccrualAdjustmentTransactionBusinessEvent");
 
         List<FineractPlatformTenant> tenants = Arrays
                 .asList(new FineractPlatformTenant(1L, "default", "Default Tenant", "Europe/Budapest", null));

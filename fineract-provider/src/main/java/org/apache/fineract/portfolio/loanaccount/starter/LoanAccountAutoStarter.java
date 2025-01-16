@@ -20,7 +20,7 @@ package org.apache.fineract.portfolio.loanaccount.starter;
 
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
-import org.apache.fineract.portfolio.loanaccount.domain.reaging.LoanReAgingParameterRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.AdvancedPaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.CreocoreLoanRepaymentScheduleTransactionProcessor;
@@ -32,10 +32,13 @@ import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.imp
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.InterestPrincipalPenaltyFeesOrderLoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.PrincipalInterestPenaltyFeesOrderLoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.RBILoanRepaymentScheduleTransactionProcessor;
+import org.apache.fineract.portfolio.loanaccount.service.ProgressiveLoanInterestRefundServiceImpl;
+import org.apache.fineract.portfolio.loanproduct.calc.EMICalculator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 @Configuration
 public class LoanAccountAutoStarter {
@@ -104,9 +107,9 @@ public class LoanAccountAutoStarter {
 
     @Bean
     @Conditional(AdvancedPaymentScheduleTransactionProcessorCondition.class)
-    public AdvancedPaymentScheduleTransactionProcessor advancedPaymentScheduleTransactionProcessor(
-            LoanReAgingParameterRepository reAgingParameterRepository) {
-        return new AdvancedPaymentScheduleTransactionProcessor(reAgingParameterRepository);
+    public AdvancedPaymentScheduleTransactionProcessor advancedPaymentScheduleTransactionProcessor(EMICalculator emiCalculator,
+            LoanRepositoryWrapper loanRepositoryWrapper,
+            @Lazy ProgressiveLoanInterestRefundServiceImpl progressiveLoanInterestRefundService) {
+        return new AdvancedPaymentScheduleTransactionProcessor(emiCalculator, loanRepositoryWrapper, progressiveLoanInterestRefundService);
     }
-
 }

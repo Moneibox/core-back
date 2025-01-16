@@ -20,6 +20,7 @@ package org.apache.fineract.accounting.producttoaccountmapping.service;
 
 import java.util.List;
 import java.util.Map;
+import org.apache.fineract.accounting.producttoaccountmapping.data.ChargeOffReasonToGLAccountMapper;
 import org.apache.fineract.accounting.producttoaccountmapping.data.ChargeToGLAccountMapper;
 import org.apache.fineract.accounting.producttoaccountmapping.data.PaymentTypeToGLAccountMapper;
 
@@ -47,4 +48,5 @@ public interface ProductToGLAccountMappingReadPlatformService {
 
     List<ChargeToGLAccountMapper> fetchFeeToIncomeAccountMappingsForShareProduct(Long productId);
 
+    List<ChargeOffReasonToGLAccountMapper> fetchChargeOffReasonMappingsForLoanProduct(Long loanProductId);
 }

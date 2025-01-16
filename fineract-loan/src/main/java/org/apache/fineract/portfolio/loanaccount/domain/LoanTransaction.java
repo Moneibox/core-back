@@ -25,6 +25,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
@@ -37,9 +38,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
+import lombok.Getter;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
@@ -47,6 +51,7 @@ import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.account.data.AccountTransferData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
+import org.apache.fineract.portfolio.loanaccount.domain.reaging.LoanReAgeParameter;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.paymentdetail.data.PaymentDetailData;
@@ -56,9 +61,10 @@ import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
  * All monetary transactions against a loan are modelled through this entity. Disbursements, Repayments, Waivers,
  * Write-off etc
  */
+@Getter
 @Entity
 @Table(name = "m_loan_transaction", uniqueConstraints = { @UniqueConstraint(columnNames = { "external_id" }, name = "external_id_UNIQUE") })
-public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
+public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "loan_id", nullable = false)
@@ -135,6 +141,9 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY, mappedBy = "fromTransaction")
     private Set<LoanTransactionRelation> loanTransactionRelations = new HashSet<>();
 
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY, mappedBy = "loanTransaction")
+    private LoanReAgeParameter loanReAgeParameter;
+
     protected LoanTransaction() {}
 
     public static LoanTransaction incomePosting(final Loan loan, final Office office, final LocalDate dateOf, final BigDecimal amount,
@@ -182,6 +191,11 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
                 chargeRefundChargeType);
     }
 
+    public static LoanTransaction interestRefund(final Loan loan, final BigDecimal amount, final LocalDate date,
+            final ExternalId externalId) {
+        return new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.INTEREST_REFUND, null, amount, date, externalId);
+    }
+
     public static LoanTransaction chargeAdjustment(final Loan loan, final BigDecimal amount, final LocalDate transactionDate,
             final ExternalId externalId, PaymentDetail paymentDetail) {
         return new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.CHARGE_ADJUSTMENT, paymentDetail, amount, transactionDate,
@@ -192,6 +206,12 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
             final LocalDate paymentDate, final ExternalId externalId) {
         return new LoanTransaction(null, office, LoanTransactionType.DOWN_PAYMENT, paymentDetail, amount.getAmount(), paymentDate,
                 externalId);
+    }
+
+    public static LoanTransaction refund(Loan loan, LoanTransactionType loanTransactionType, BigDecimal transactionAmount,
+            PaymentDetail paymentDetail, LocalDate transactionDate, ExternalId txnExternalId) {
+        return new LoanTransaction(loan, loan.getOffice(), loanTransactionType, paymentDetail, transactionAmount, transactionDate,
+                txnExternalId);
     }
 
     public void setLoanTransactionToRepaymentScheduleMappings(final Integer installmentId, final BigDecimal chargePerInstallment) {
@@ -232,50 +252,53 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
 
     public static LoanTransaction accrueInterest(final Office office, final Loan loan, final Money amount,
             final LocalDate interestAppliedDate, final ExternalId externalId) {
-        BigDecimal principalPortion = null;
-        BigDecimal feesPortion = null;
-        BigDecimal penaltiesPortion = null;
         BigDecimal interestPortion = amount.getAmount();
-        BigDecimal overPaymentPortion = null;
-        boolean reversed = false;
-        PaymentDetail paymentDetail = null;
-        return new LoanTransaction(loan, office, LoanTransactionType.ACCRUAL.getValue(), interestAppliedDate, interestPortion,
-                principalPortion, interestPortion, feesPortion, penaltiesPortion, overPaymentPortion, reversed, paymentDetail, externalId);
+        return accrueTransaction(loan, office, interestAppliedDate, interestPortion, interestPortion, null, null, externalId);
+    }
+
+    public static LoanTransaction accrueLoanCharge(final Loan loan, final Office office, final Money amount, final LocalDate applyDate,
+            final Money feeCharges, final Money penaltyCharges, final ExternalId externalId) {
+        final LoanTransaction applyCharge = new LoanTransaction(loan, office, LoanTransactionType.ACCRUAL, amount.getAmount(), applyDate,
+                externalId);
+        applyCharge.updateChargesComponents(feeCharges, penaltyCharges);
+        return applyCharge;
     }
 
     public static LoanTransaction accrueTransaction(final Loan loan, final Office office, final LocalDate dateOf, final BigDecimal amount,
             final BigDecimal interestPortion, final BigDecimal feeChargesPortion, final BigDecimal penaltyChargesPortion,
             final ExternalId externalId) {
-        BigDecimal principalPortion = null;
-        BigDecimal overPaymentPortion = null;
-        boolean reversed = false;
-        PaymentDetail paymentDetail = null;
-        return new LoanTransaction(loan, office, LoanTransactionType.ACCRUAL.getValue(), dateOf, amount, principalPortion, interestPortion,
-                feeChargesPortion, penaltyChargesPortion, overPaymentPortion, reversed, paymentDetail, externalId);
+        return new LoanTransaction(loan, office, LoanTransactionType.ACCRUAL.getValue(), dateOf, amount, null, interestPortion,
+                feeChargesPortion, penaltyChargesPortion, null, false, null, externalId);
+    }
+
+    public static LoanTransaction accrualAdjustment(final Loan loan, final Office office, final LocalDate dateOf, final BigDecimal amount,
+            final BigDecimal interestPortion, final BigDecimal feePortion, final BigDecimal penaltyPortion, final ExternalId externalId) {
+        return new LoanTransaction(loan, office, LoanTransactionType.ACCRUAL_ADJUSTMENT.getValue(), dateOf, amount, null, interestPortion,
+                feePortion, penaltyPortion, null, false, null, externalId);
     }
 
     public static LoanTransaction initiateTransfer(final Office office, final Loan loan, final LocalDate transferDate,
             final ExternalId externalId) {
         return new LoanTransaction(loan, office, LoanTransactionType.INITIATE_TRANSFER.getValue(), transferDate,
-                loan.getLoanSummary().getTotalOutstanding(), loan.getLoanSummary().getTotalPrincipalOutstanding(),
-                loan.getLoanSummary().getTotalInterestOutstanding(), loan.getLoanSummary().getTotalFeeChargesOutstanding(),
-                loan.getLoanSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
+                loan.getSummary().getTotalOutstanding(), loan.getSummary().getTotalPrincipalOutstanding(),
+                loan.getSummary().getTotalInterestOutstanding(), loan.getSummary().getTotalFeeChargesOutstanding(),
+                loan.getSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
     }
 
     public static LoanTransaction approveTransfer(final Office office, final Loan loan, final LocalDate transferDate,
             final ExternalId externalId) {
         return new LoanTransaction(loan, office, LoanTransactionType.APPROVE_TRANSFER.getValue(), transferDate,
-                loan.getLoanSummary().getTotalOutstanding(), loan.getLoanSummary().getTotalPrincipalOutstanding(),
-                loan.getLoanSummary().getTotalInterestOutstanding(), loan.getLoanSummary().getTotalFeeChargesOutstanding(),
-                loan.getLoanSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
+                loan.getSummary().getTotalOutstanding(), loan.getSummary().getTotalPrincipalOutstanding(),
+                loan.getSummary().getTotalInterestOutstanding(), loan.getSummary().getTotalFeeChargesOutstanding(),
+                loan.getSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
     }
 
     public static LoanTransaction withdrawTransfer(final Office office, final Loan loan, final LocalDate transferDate,
             final ExternalId externalId) {
         return new LoanTransaction(loan, office, LoanTransactionType.WITHDRAW_TRANSFER.getValue(), transferDate,
-                loan.getLoanSummary().getTotalOutstanding(), loan.getLoanSummary().getTotalPrincipalOutstanding(),
-                loan.getLoanSummary().getTotalInterestOutstanding(), loan.getLoanSummary().getTotalFeeChargesOutstanding(),
-                loan.getLoanSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
+                loan.getSummary().getTotalOutstanding(), loan.getSummary().getTotalPrincipalOutstanding(),
+                loan.getSummary().getTotalInterestOutstanding(), loan.getSummary().getTotalFeeChargesOutstanding(),
+                loan.getSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
     }
 
     public static LoanTransaction refund(final Office office, final Money amount, final PaymentDetail paymentDetail,
@@ -292,15 +315,17 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
         if (LoanTransactionType.CHARGE_PAYMENT.equals(loanTransaction.getTypeOf())) {
             newTransaction.getLoanChargesPaid().addAll(loanTransaction.getLoanChargesPaid());
         }
+        if (LoanTransactionType.REAGE.equals(loanTransaction.getTypeOf())) {
+            newTransaction.setLoanReAgeParameter(loanTransaction.getLoanReAgeParameter().getCopy(newTransaction));
+        }
         return newTransaction;
     }
 
-    public static LoanTransaction accrueLoanCharge(final Loan loan, final Office office, final Money amount, final LocalDate applyDate,
-            final Money feeCharges, final Money penaltyCharges, final ExternalId externalId) {
-        final LoanTransaction applyCharge = new LoanTransaction(loan, office, LoanTransactionType.ACCRUAL, amount.getAmount(), applyDate,
-                externalId);
-        applyCharge.updateChargesComponents(feeCharges, penaltyCharges);
-        return applyCharge;
+    public LoanTransaction copyTransactionPropertiesAndMappings() {
+        LoanTransaction newTransaction = copyTransactionProperties(this);
+        newTransaction.updateLoanTransactionToRepaymentScheduleMappings(loanTransactionToRepaymentScheduleMappings);
+        newTransaction.updateLoanChargePaidMappings(loanChargesPaid);
+        return newTransaction;
     }
 
     public static LoanTransaction creditBalanceRefund(final Loan loan, final Office office, final Money amount, final LocalDate paymentDate,
@@ -313,6 +338,13 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
             final LocalDate paymentDate, final ExternalId externalId) {
         return new LoanTransaction(null, office, LoanTransactionType.REFUND_FOR_ACTIVE_LOAN, paymentDetail, amount.getAmount(), paymentDate,
                 externalId);
+    }
+
+    public static LoanTransaction interestRefund(final Loan loan, final Office office, final BigDecimal amount, final BigDecimal principal,
+            final BigDecimal interest, final BigDecimal feeCharges, final BigDecimal penaltyCharges, final PaymentDetail paymentDetail,
+            final LocalDate refundDate, final ExternalId externalId) {
+        return new LoanTransaction(loan, office, LoanTransactionType.INTEREST_REFUND.getValue(), refundDate, amount, principal, interest,
+                feeCharges, penaltyCharges, amount, false, paymentDetail, externalId);
     }
 
     public static boolean transactionAmountsMatch(final MonetaryCurrency currency, final LoanTransaction loanTransaction,
@@ -361,19 +393,19 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public static LoanTransaction chargeOff(final Loan loan, final LocalDate chargeOffDate, final ExternalId externalId) {
-        BigDecimal principalPortion = loan.getLoanSummary().getTotalPrincipalOutstanding().compareTo(BigDecimal.ZERO) != 0
-                ? loan.getLoanSummary().getTotalPrincipalOutstanding()
+        BigDecimal principalPortion = loan.getSummary().getTotalPrincipalOutstanding().compareTo(BigDecimal.ZERO) != 0
+                ? loan.getSummary().getTotalPrincipalOutstanding()
                 : null;
-        BigDecimal interestPortion = loan.getLoanSummary().getTotalInterestOutstanding().compareTo(BigDecimal.ZERO) != 0
-                ? loan.getLoanSummary().getTotalInterestOutstanding()
+        BigDecimal interestPortion = loan.getSummary().getTotalInterestOutstanding().compareTo(BigDecimal.ZERO) != 0
+                ? loan.getSummary().getTotalInterestOutstanding()
                 : null;
-        BigDecimal feePortion = loan.getLoanSummary().getTotalFeeChargesOutstanding().compareTo(BigDecimal.ZERO) != 0
-                ? loan.getLoanSummary().getTotalFeeChargesOutstanding()
+        BigDecimal feePortion = loan.getSummary().getTotalFeeChargesOutstanding().compareTo(BigDecimal.ZERO) != 0
+                ? loan.getSummary().getTotalFeeChargesOutstanding()
                 : null;
-        BigDecimal penaltyPortion = loan.getLoanSummary().getTotalPenaltyChargesOutstanding().compareTo(BigDecimal.ZERO) != 0
-                ? loan.getLoanSummary().getTotalPenaltyChargesOutstanding()
+        BigDecimal penaltyPortion = loan.getSummary().getTotalPenaltyChargesOutstanding().compareTo(BigDecimal.ZERO) != 0
+                ? loan.getSummary().getTotalPenaltyChargesOutstanding()
                 : null;
-        BigDecimal totalOutstanding = loan.getLoanSummary().getTotalOutstanding();
+        BigDecimal totalOutstanding = loan.getSummary().getTotalOutstanding();
 
         return new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.CHARGE_OFF.getValue(), chargeOffDate, totalOutstanding,
                 principalPortion, interestPortion, feePortion, penaltyPortion, null, false, null, externalId);
@@ -416,7 +448,6 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public void reverse() {
-        this.loan.validateRepaymentTypeTransactionNotBeforeAChargeRefund(this, "reversed");
         this.reversed = true;
         this.reversedOnDate = DateUtils.getBusinessLocalDate();
         this.loanTransactionToRepaymentScheduleMappings.clear();
@@ -455,67 +486,45 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
      *            penaltyCharges
      */
     public void updateComponents(final Money principal, final Money interest, final Money feeCharges, final Money penaltyCharges) {
-        final MonetaryCurrency currency = principal.getCurrency();
-        this.principalPortion = defaultToNullIfZero(getPrincipalPortion(currency).plus(principal).getAmount());
-        this.interestPortion = defaultToNullIfZero(getInterestPortion(currency).plus(interest).getAmount());
+        this.principalPortion = MathUtil.zeroToNull(MathUtil.add(getPrincipalPortion(), MathUtil.toBigDecimal(principal)));
+        this.interestPortion = MathUtil.zeroToNull(MathUtil.add(getInterestPortion(), MathUtil.toBigDecimal(interest)));
         updateChargesComponents(feeCharges, penaltyCharges);
     }
 
     public void updateChargesComponents(final Money feeCharges, final Money penaltyCharges) {
-        final MonetaryCurrency currency = feeCharges.getCurrency();
-        this.feeChargesPortion = defaultToNullIfZero(getFeeChargesPortion(currency).plus(feeCharges).getAmount());
-        this.penaltyChargesPortion = defaultToNullIfZero(getPenaltyChargesPortion(currency).plus(penaltyCharges).getAmount());
+        this.feeChargesPortion = MathUtil.zeroToNull(MathUtil.add(getFeeChargesPortion(), MathUtil.toBigDecimal(feeCharges)));
+        this.penaltyChargesPortion = MathUtil.zeroToNull(MathUtil.add(getPenaltyChargesPortion(), MathUtil.toBigDecimal(penaltyCharges)));
     }
 
     private void updateChargesComponents(final Money feeCharges, final Money penaltyCharges, final Money unrecognizedCharges) {
-        final MonetaryCurrency currency = feeCharges.getCurrency();
-        this.feeChargesPortion = defaultToNullIfZero(getFeeChargesPortion(currency).plus(feeCharges).getAmount());
-        this.penaltyChargesPortion = defaultToNullIfZero(getPenaltyChargesPortion(currency).plus(penaltyCharges).getAmount());
-        this.unrecognizedIncomePortion = defaultToNullIfZero(getUnrecognizedIncomePortion(currency).plus(unrecognizedCharges).getAmount());
+        this.feeChargesPortion = MathUtil.zeroToNull(MathUtil.add(getFeeChargesPortion(), MathUtil.toBigDecimal(feeCharges)));
+        this.penaltyChargesPortion = MathUtil.zeroToNull(MathUtil.add(getPenaltyChargesPortion(), MathUtil.toBigDecimal(penaltyCharges)));
+        this.unrecognizedIncomePortion = MathUtil
+                .zeroToNull(MathUtil.add(getUnrecognizedIncomePortion(), MathUtil.toBigDecimal(unrecognizedCharges)));
     }
 
     private void updateInterestComponent(final Money interest, final Money unrecognizedInterest) {
-        final MonetaryCurrency currency = interest.getCurrency();
-        this.interestPortion = defaultToNullIfZero(getInterestPortion(currency).plus(interest).getAmount());
-        this.unrecognizedIncomePortion = defaultToNullIfZero(getUnrecognizedIncomePortion(currency).plus(unrecognizedInterest).getAmount());
+        this.interestPortion = MathUtil.zeroToNull(MathUtil.add(getInterestPortion(), MathUtil.toBigDecimal(interest)));
+        this.unrecognizedIncomePortion = MathUtil
+                .zeroToNull(MathUtil.add(getUnrecognizedIncomePortion(), MathUtil.toBigDecimal(unrecognizedInterest)));
     }
 
-    public void adjustInterestComponent(final MonetaryCurrency currency) {
-        this.interestPortion = defaultToNullIfZero(getInterestPortion(currency).minus(getUnrecognizedIncomePortion(currency)).getAmount());
+    public void adjustInterestComponent() {
+        this.interestPortion = MathUtil.zeroToNull(MathUtil.subtract(getInterestPortion(), getUnrecognizedIncomePortion()));
     }
 
     public void updateComponentsAndTotal(final Money principal, final Money interest, final Money feeCharges, final Money penaltyCharges) {
         updateComponents(principal, interest, feeCharges, penaltyCharges);
-
-        final MonetaryCurrency currency = principal.getCurrency();
-        this.amount = getPrincipalPortion(currency).plus(getInterestPortion(currency)).plus(getFeeChargesPortion(currency))
-                .plus(getPenaltyChargesPortion(currency)).getAmount();
+        this.amount = MathUtil
+                .nullToZero(MathUtil.add(getPrincipalPortion(), getInterestPortion(), getFeeChargesPortion(), getPenaltyChargesPortion()));
     }
 
     public void setOverPayments(final Money overPayment) {
-        if (overPayment != null) {
-            this.overPaymentPortion = defaultToNullIfZero(overPayment.getAmount());
-        }
+        this.overPaymentPortion = MathUtil.zeroToNull(MathUtil.toBigDecimal(overPayment));
     }
 
     public Money getPrincipalPortion(final MonetaryCurrency currency) {
         return Money.of(currency, this.principalPortion);
-    }
-
-    public BigDecimal getPrincipalPortion() {
-        return this.principalPortion;
-    }
-
-    public BigDecimal getInterestPortion() {
-        return this.interestPortion;
-    }
-
-    public BigDecimal getPenaltyChargesPortion() {
-        return this.penaltyChargesPortion;
-    }
-
-    public BigDecimal getFeeChargesPortion() {
-        return this.feeChargesPortion;
     }
 
     public Money getInterestPortion(final MonetaryCurrency currency) {
@@ -546,10 +555,6 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
         return this.dateOf;
     }
 
-    public LocalDate getDateOf() {
-        return this.dateOf;
-    }
-
     public LoanTransactionType getTypeOf() {
         return LoanTransactionType.fromInt(this.typeOf);
     }
@@ -572,11 +577,12 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
 
     public boolean isRepaymentLikeType() {
         return isRepayment() || isMerchantIssuedRefund() || isPayoutRefund() || isGoodwillCredit() || isChargeRefund()
-                || isChargeAdjustment() || isDownPayment();
+                || isChargeAdjustment() || isDownPayment() || isInterestPaymentWaiver() || isInterestRefund();
     }
 
     public boolean isTypeAllowedForChargeback() {
-        return isRepayment() || isMerchantIssuedRefund() || isPayoutRefund() || isGoodwillCredit() || isDownPayment();
+        return isRepayment() || isMerchantIssuedRefund() || isPayoutRefund() || isGoodwillCredit() || isDownPayment()
+                || isInterestPaymentWaiver();
     }
 
     public boolean isRepayment() {
@@ -597,6 +603,10 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
 
     public boolean isGoodwillCredit() {
         return LoanTransactionType.GOODWILL_CREDIT.equals(getTypeOf()) && isNotReversed();
+    }
+
+    public boolean isInterestPaymentWaiver() {
+        return LoanTransactionType.INTEREST_PAYMENT_WAIVER.equals(getTypeOf()) && isNotReversed();
     }
 
     public boolean isChargeRefund() {
@@ -698,44 +708,20 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
         return getTypeOf().isReAmortize() && isNotReversed();
     }
 
-    public boolean isIdentifiedBy(final Long identifier) {
-        return getId().equals(identifier);
-    }
-
-    public boolean isBelongingToLoanOf(final Loan check) {
-        return this.loan.getId().equals(check.getId());
-    }
-
-    public boolean isNotBelongingToLoanOf(final Loan check) {
-        return !isBelongingToLoanOf(check);
-    }
-
-    public boolean isNonZero() {
-        return this.amount.subtract(BigDecimal.ZERO).doubleValue() > 0;
-    }
-
     public boolean isGreaterThan(final Money monetaryAmount) {
-        return getAmount(monetaryAmount.getCurrency()).isGreaterThan(monetaryAmount);
+        return MathUtil.isGreaterThan(amount, MathUtil.toBigDecimal(monetaryAmount));
     }
 
-    public boolean isGreaterThanZero(final MonetaryCurrency currency) {
-        return getAmount(currency).isGreaterThanZero();
+    public boolean isGreaterThanZero() {
+        return MathUtil.isGreaterThanZero(amount);
     }
 
     public boolean isGreaterThanZeroAndLessThanOrEqualTo(BigDecimal totalOverpaid) {
-        return isNonZero() && this.amount.compareTo(totalOverpaid) <= 0;
+        return isGreaterThanZero() && !MathUtil.isGreaterThan(amount, totalOverpaid);
     }
 
-    public boolean isNotZero(final MonetaryCurrency currency) {
-        return !getAmount(currency).isZero();
-    }
-
-    private BigDecimal defaultToNullIfZero(final BigDecimal value) {
-        BigDecimal result = value;
-        if (BigDecimal.ZERO.compareTo(value) == 0) {
-            result = null;
-        }
-        return result;
+    public boolean isNotZero() {
+        return !MathUtil.isEmpty(amount);
     }
 
     public LoanTransactionData toData(final CurrencyData currencyData, final AccountTransferData transfer) {
@@ -759,7 +745,7 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
         thisTransactionData.put("id", getId());
         thisTransactionData.put("officeId", this.office.getId());
         thisTransactionData.put("type", transactionType);
-        thisTransactionData.put("reversed", Boolean.valueOf(isReversed()));
+        thisTransactionData.put("reversed", isReversed());
         thisTransactionData.put("date", getTransactionDate());
         thisTransactionData.put("currencyCode", currencyCode);
         thisTransactionData.put("amount", this.amount);
@@ -828,20 +814,8 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
         return thisTransactionData;
     }
 
-    public Loan getLoan() {
-        return this.loan;
-    }
-
-    public Set<LoanChargePaidBy> getLoanChargesPaid() {
-        return this.loanChargesPaid;
-    }
-
     public void setLoanChargesPaid(final Set<LoanChargePaidBy> loanChargesPaid) {
         this.loanChargesPaid = loanChargesPaid;
-    }
-
-    public ExternalId getExternalId() {
-        return this.externalId;
     }
 
     public boolean isRefund() {
@@ -857,16 +831,37 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public boolean isAccrual() {
-        return LoanTransactionType.ACCRUAL.equals(getTypeOf()) && isNotReversed();
+        return getTypeOf().isAccrual();
+    }
+
+    public boolean isAccrualAdjustment() {
+        return getTypeOf().isAccrualAdjustment();
+    }
+
+    public boolean isAccrualActivity() {
+        return getTypeOf().isAccrualActivity();
+    }
+
+    public boolean isAccrualRelated() {
+        return isAccrual() || isAccrualAdjustment() || isAccrualActivity();
+    }
+
+    public boolean isWaiveCharge() {
+        return getTypeOf().isWaiveCharges();
+    }
+
+    public boolean isWaiveInterest() {
+        return getTypeOf().isWaiveInterest();
     }
 
     public boolean isNonMonetaryTransaction() {
-        return isNotReversed() && (LoanTransactionType.CONTRA.equals(getTypeOf())
-                || LoanTransactionType.MARKED_FOR_RESCHEDULING.equals(getTypeOf())
-                || LoanTransactionType.APPROVE_TRANSFER.equals(getTypeOf()) || LoanTransactionType.INITIATE_TRANSFER.equals(getTypeOf())
-                || LoanTransactionType.REJECT_TRANSFER.equals(getTypeOf()) || LoanTransactionType.WITHDRAW_TRANSFER.equals(getTypeOf())
-                || LoanTransactionType.CHARGE_OFF.equals(getTypeOf()) || LoanTransactionType.REAMORTIZE.equals(getTypeOf())
-                || LoanTransactionType.REAGE.equals(getTypeOf()));
+        LoanTransactionType type = getTypeOf();
+        return isNotReversed() && (type == LoanTransactionType.CONTRA || type == LoanTransactionType.MARKED_FOR_RESCHEDULING
+                || type == LoanTransactionType.ACCRUAL || type == LoanTransactionType.ACCRUAL_ADJUSTMENT
+                || type == LoanTransactionType.ACCRUAL_ACTIVITY || type == LoanTransactionType.APPROVE_TRANSFER
+                || type == LoanTransactionType.INITIATE_TRANSFER || type == LoanTransactionType.REJECT_TRANSFER
+                || type == LoanTransactionType.WITHDRAW_TRANSFER || type == LoanTransactionType.CHARGE_OFF
+                || type == LoanTransactionType.REAMORTIZE || type == LoanTransactionType.REAGE);
     }
 
     public void updateOutstandingLoanBalance(BigDecimal outstandingLoanBalance) {
@@ -882,49 +877,88 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
         return LoanTransactionType.REFUND_FOR_ACTIVE_LOAN.equals(getTypeOf()) && isNotReversed();
     }
 
-    public boolean isManuallyAdjustedOrReversed() {
-        return this.manuallyAdjustedOrReversed;
-    }
-
-    public boolean isNotManuallyAdjustedOrReversed() {
-        return !this.manuallyAdjustedOrReversed;
-    }
-
     public void manuallyAdjustedOrReversed() {
         this.manuallyAdjustedOrReversed = true;
     }
 
     public void updateLoanTransactionToRepaymentScheduleMappings(final Collection<LoanTransactionToRepaymentScheduleMapping> mappings) {
         Collection<LoanTransactionToRepaymentScheduleMapping> retainMappings = new ArrayList<>();
-        for (LoanTransactionToRepaymentScheduleMapping updatedrepaymentScheduleMapping : mappings) {
-            updateMapingDetail(retainMappings, updatedrepaymentScheduleMapping);
+        for (LoanTransactionToRepaymentScheduleMapping updatedMapping : mappings) {
+            updateMappingDetail(retainMappings, updatedMapping, true);
         }
         this.loanTransactionToRepaymentScheduleMappings.retainAll(retainMappings);
     }
 
-    private boolean updateMapingDetail(final Collection<LoanTransactionToRepaymentScheduleMapping> retainMappings,
-            final LoanTransactionToRepaymentScheduleMapping updatedrepaymentScheduleMapping) {
+    public void addLoanTransactionToRepaymentScheduleMappings(final Collection<LoanTransactionToRepaymentScheduleMapping> updatedMappings) {
+        for (LoanTransactionToRepaymentScheduleMapping updatedMapping : updatedMappings) {
+            updateMappingDetail(null, updatedMapping, false);
+        }
+    }
+
+    private boolean updateMappingDetail(final Collection<LoanTransactionToRepaymentScheduleMapping> retainMappings,
+            final LoanTransactionToRepaymentScheduleMapping updatedMapping, boolean overwrite) {
         boolean isMappingUpdated = false;
-        for (LoanTransactionToRepaymentScheduleMapping repaymentScheduleMapping : this.loanTransactionToRepaymentScheduleMappings) {
-            if (updatedrepaymentScheduleMapping.getLoanRepaymentScheduleInstallment().getId() != null
-                    && repaymentScheduleMapping.getLoanRepaymentScheduleInstallment().getDueDate()
-                            .equals(updatedrepaymentScheduleMapping.getLoanRepaymentScheduleInstallment().getDueDate())
-                    && updatedrepaymentScheduleMapping.getLoanRepaymentScheduleInstallment().getId()
-                            .equals(repaymentScheduleMapping.getLoanRepaymentScheduleInstallment().getId())) {
-                repaymentScheduleMapping.setComponents(updatedrepaymentScheduleMapping.getPrincipalPortion(),
-                        updatedrepaymentScheduleMapping.getInterestPortion(), updatedrepaymentScheduleMapping.getFeeChargesPortion(),
-                        updatedrepaymentScheduleMapping.getPenaltyChargesPortion());
+        LoanRepaymentScheduleInstallment updatedInstallment = updatedMapping.getLoanRepaymentScheduleInstallment();
+        for (LoanTransactionToRepaymentScheduleMapping existingMapping : this.loanTransactionToRepaymentScheduleMappings) {
+            LoanRepaymentScheduleInstallment existingInstallment = existingMapping.getLoanRepaymentScheduleInstallment();
+            if (DateUtils.isEqual(existingInstallment.getDueDate(), updatedInstallment.getDueDate()) && updatedInstallment.getId() != null
+                    && updatedInstallment.getId().equals(existingInstallment.getId())) {
+                if (overwrite) {
+                    existingMapping.setComponents(updatedMapping.getPrincipalPortion(), updatedMapping.getInterestPortion(),
+                            updatedMapping.getFeeChargesPortion(), updatedMapping.getPenaltyChargesPortion());
+                } else {
+                    existingMapping.updateComponents(updatedMapping.getPrincipalPortion(), updatedMapping.getInterestPortion(),
+                            updatedMapping.getFeeChargesPortion(), updatedMapping.getPenaltyChargesPortion());
+                }
                 isMappingUpdated = true;
-                retainMappings.add(repaymentScheduleMapping);
+                if (retainMappings != null) {
+                    retainMappings.add(existingMapping);
+                }
                 break;
             }
         }
         if (!isMappingUpdated) {
-            updatedrepaymentScheduleMapping.setLoanTransaction(this);
-            this.loanTransactionToRepaymentScheduleMappings.add(updatedrepaymentScheduleMapping);
-            retainMappings.add(updatedrepaymentScheduleMapping);
+            LoanTransactionToRepaymentScheduleMapping newMapping = LoanTransactionToRepaymentScheduleMapping.createFrom(this,
+                    updatedInstallment, null, null, null, null);
+            newMapping.setComponents(updatedMapping.getPrincipalPortion(), updatedMapping.getInterestPortion(),
+                    updatedMapping.getFeeChargesPortion(), updatedMapping.getPenaltyChargesPortion());
+            this.loanTransactionToRepaymentScheduleMappings.add(newMapping);
+            if (retainMappings != null) {
+                retainMappings.add(newMapping);
+            }
         }
         return isMappingUpdated;
+    }
+
+    public void updateLoanChargePaidMappings(final Collection<LoanChargePaidBy> updatedMappings) {
+        Collection<LoanChargePaidBy> retainMappings = new ArrayList<>();
+        for (LoanChargePaidBy updatedMapping : updatedMappings) {
+            updateLoanChargePaid(retainMappings, updatedMapping);
+        }
+        this.loanChargesPaid.retainAll(retainMappings);
+    }
+
+    private boolean updateLoanChargePaid(final Collection<LoanChargePaidBy> retainMappings, final LoanChargePaidBy updatedMapping) {
+        boolean updated = false;
+        LoanCharge updatedCharge = updatedMapping.getLoanCharge();
+        Integer updatedInstallment = updatedMapping.getInstallmentNumber();
+        for (LoanChargePaidBy existingMapping : loanChargesPaid) {
+            LoanCharge existingCharge = existingMapping.getLoanCharge();
+            Integer existingInstallment = existingMapping.getInstallmentNumber();
+            if (existingCharge.equals(updatedCharge)
+                    && (existingInstallment == null ? updatedInstallment == null : existingInstallment.equals(updatedInstallment))) {
+                existingMapping.setAmount(updatedMapping.getAmount());
+                updated = true;
+                retainMappings.add(existingMapping);
+                break;
+            }
+        }
+        if (!updated) {
+            LoanChargePaidBy newMapping = new LoanChargePaidBy(this, updatedCharge, updatedMapping.getAmount(), updatedInstallment);
+            this.loanChargesPaid.add(newMapping);
+            retainMappings.add(newMapping);
+        }
+        return updated;
     }
 
     public Set<LoanTransactionToRepaymentScheduleMapping> getLoanTransactionToRepaymentScheduleMappings() {
@@ -932,32 +966,16 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public Boolean isAllowTypeTransactionAtTheTimeOfLastUndo() {
-        return isDisbursement() || isAccrual() || isRepaymentAtDisbursement() || isRepayment();
-    }
-
-    public boolean isAccrualTransaction() {
-        return isAccrual();
-    }
-
-    public BigDecimal getOutstandingLoanBalance() {
-        return outstandingLoanBalance;
+        return isNotReversed() && (isDisbursement() || isAccrualActivity() || isRepaymentAtDisbursement() || isRepayment());
     }
 
     public Money getOutstandingLoanBalanceMoney(final MonetaryCurrency currency) {
         return Money.of(currency, this.outstandingLoanBalance);
     }
 
-    public PaymentDetail getPaymentDetail() {
-        return this.paymentDetail;
-    }
-
     public boolean isPaymentTransaction() {
-        return this.isNotReversed() && !(this.isDisbursement() || this.isAccrual() || this.isRepaymentAtDisbursement()
-                || this.isNonMonetaryTransaction() || this.isIncomePosting());
-    }
-
-    public Set<LoanCollateralManagement> getLoanCollateralManagementSet() {
-        return this.loanCollateralManagementSet;
+        return this.isNotReversed() && !(this.isDisbursement() || this.isRepaymentAtDisbursement() || this.isNonMonetaryTransaction()
+                || this.isIncomePosting());
     }
 
     public LocalDate getSubmittedOnDate() {
@@ -965,16 +983,15 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
     }
 
     public boolean hasLoanTransactionRelations() {
-        return (loanTransactionRelations != null && loanTransactionRelations.size() > 0);
+        return !loanTransactionRelations.isEmpty();
+    }
+
+    public List<LoanTransactionRelation> getLoanTransactionRelations(Predicate<LoanTransactionRelation> predicate) {
+        return loanTransactionRelations.stream().filter(predicate).toList();
     }
 
     public boolean hasChargebackLoanTransactionRelations() {
-        return (loanTransactionRelations != null
-                && loanTransactionRelations.stream().anyMatch(e -> LoanTransactionRelationTypeEnum.CHARGEBACK.equals(e.getRelationType())));
-    }
-
-    public Set<LoanTransactionRelation> getLoanTransactionRelations() {
-        return loanTransactionRelations;
+        return !getLoanTransactionRelations(e -> LoanTransactionRelationTypeEnum.CHARGEBACK.equals(e.getRelationType())).isEmpty();
     }
 
     public void copyLoanTransactionRelations(Set<LoanTransactionRelation> sourceLoanTransactionRelations) {
@@ -982,10 +999,6 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
             loanTransactionRelations.add(new LoanTransactionRelation(this, existingLoanTransactionRelation.getToTransaction(),
                     existingLoanTransactionRelation.getToCharge(), existingLoanTransactionRelation.getRelationType()));
         }
-    }
-
-    public BigDecimal getAmount() {
-        return amount;
     }
 
     public boolean isBefore(final LocalDate date) {
@@ -998,6 +1011,26 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom {
 
     public boolean isOn(final LocalDate date) {
         return DateUtils.isEqual(getTransactionDate(), date);
+    }
+
+    public void setLoanReAgeParameter(LoanReAgeParameter loanReAgeParameter) {
+        this.loanReAgeParameter = loanReAgeParameter;
+    }
+
+    public boolean happenedBefore(LoanTransaction loanTransaction) {
+        return LoanTransactionComparator.INSTANCE.compare(this, loanTransaction) < 0;
+    }
+
+    public boolean isOverPaid() {
+        return MathUtil.isGreaterThanZero(overPaymentPortion);
+    }
+
+    public boolean isInterestRefund() {
+        return getTypeOf().isInterestRefund();
+    }
+
+    public void updateAmount(BigDecimal bigDecimal) {
+        this.amount = bigDecimal;
     }
 
     // TODO missing hashCode(), equals(Object obj), but probably OK as long as

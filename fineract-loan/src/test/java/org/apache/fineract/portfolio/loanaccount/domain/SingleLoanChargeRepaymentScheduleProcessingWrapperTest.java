@@ -24,6 +24,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -64,6 +65,7 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
     @BeforeAll
     public static void init() {
         MONEY_HELPER.when(MoneyHelper::getRoundingMode).thenReturn(RoundingMode.HALF_EVEN);
+        MONEY_HELPER.when(MoneyHelper::getMathContext).thenReturn(new MathContext(12, RoundingMode.HALF_EVEN));
     }
 
     @Test
@@ -132,7 +134,9 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
         when(charge.getName()).thenReturn("charge a");
         when(charge.getCurrencyCode()).thenReturn("UDS");
         when(charge.isPenalty()).thenReturn(penalty);
-        LoanCharge loanCharge = new LoanCharge(null, charge, new BigDecimal(1000), new BigDecimal(10), ChargeTimeType.SPECIFIED_DUE_DATE,
+        Loan loan = mock(Loan.class);
+        when(loan.isInterestBearing()).thenReturn(false);
+        LoanCharge loanCharge = new LoanCharge(loan, charge, new BigDecimal(1000), new BigDecimal(10), ChargeTimeType.SPECIFIED_DUE_DATE,
                 ChargeCalculationType.FLAT, LocalDate.of(2023, 01, 15), ChargePaymentMode.REGULAR, 1, null, null);
         return loanCharge;
     }
@@ -140,15 +144,15 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
     @NotNull
     private LoanRepaymentScheduleInstallment createPeriod(int periodId, LocalDate start, LocalDate end) {
         LoanRepaymentScheduleInstallment period = Mockito.mock(LoanRepaymentScheduleInstallment.class);
+        MathContext mc = new MathContext(12, RoundingMode.HALF_EVEN);
         Mockito.when(period.getInstallmentNumber()).thenReturn(periodId);
         Mockito.when(period.getFromDate()).thenReturn(start);
         Mockito.when(period.getDueDate()).thenReturn(end);
-        Money principal = Money.of(currency, new BigDecimal("1000.0"));
-        Money interest = Money.of(currency, BigDecimal.ZERO);
+        Money principal = Money.of(currency, new BigDecimal("1000.0"), mc);
+        Money interest = Money.of(currency, BigDecimal.ZERO, mc);
 
         Mockito.when(period.getPrincipal(eq(currency))).thenReturn(principal);
         Mockito.when(period.getInterestCharged(eq(currency))).thenReturn(interest);
         return period;
     }
-
 }

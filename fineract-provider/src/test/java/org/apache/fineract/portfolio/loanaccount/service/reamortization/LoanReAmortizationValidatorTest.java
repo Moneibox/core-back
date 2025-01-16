@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -31,6 +32,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -52,6 +54,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@SuppressFBWarnings({ "VA_FORMAT_STRING_USES_NEWLINE" })
 class LoanReAmortizationValidatorTest {
 
     private final LocalDate actualDate = LocalDate.now(Clock.systemUTC());
@@ -265,7 +268,7 @@ class LoanReAmortizationValidatorTest {
 
     private LoanTransaction loanTransaction(LoanTransactionType type, LocalDate txDate, OffsetDateTime creationTime) {
         LoanTransaction loanTransaction = loanTransaction(type, txDate);
-        given(loanTransaction.getCreatedDateTime()).willReturn(creationTime);
+        given(loanTransaction.getCreatedDate()).willReturn(Optional.of(creationTime));
         return loanTransaction;
     }
 

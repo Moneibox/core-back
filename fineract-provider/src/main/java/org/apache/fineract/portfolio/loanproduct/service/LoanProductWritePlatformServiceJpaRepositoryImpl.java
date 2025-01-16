@@ -45,11 +45,13 @@ import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.apache.fineract.portfolio.delinquency.domain.DelinquencyBucket;
 import org.apache.fineract.portfolio.delinquency.domain.DelinquencyBucketRepository;
+import org.apache.fineract.portfolio.delinquency.exception.DelinquencyBucketNotFoundException;
 import org.apache.fineract.portfolio.floatingrates.domain.FloatingRate;
 import org.apache.fineract.portfolio.floatingrates.domain.FloatingRateRepositoryWrapper;
 import org.apache.fineract.portfolio.fund.domain.Fund;
 import org.apache.fineract.portfolio.fund.domain.FundRepository;
 import org.apache.fineract.portfolio.fund.exception.FundNotFoundException;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.AprCalculator;
@@ -60,6 +62,7 @@ import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductCreditAllocationRule;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductPaymentAllocationRule;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRepository;
+import org.apache.fineract.portfolio.loanproduct.domain.LoanSupportedInterestRefundTypes;
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductCannotBeModifiedDueToNonClosedLoansException;
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductDateException;
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundException;
@@ -122,6 +125,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
             }
             final LoanProduct loanProduct = LoanProduct.assembleFromJson(fund, loanTransactionProcessingStrategyCode, charges, command,
                     this.aprCalculator, floatingRate, rates, loanProductPaymentAllocationRules, loanProductCreditAllocationRules);
+
             loanProduct.updateLoanProductInRelatedClasses();
             loanProduct.setTransactionProcessingStrategyName(
                     loanRepaymentScheduleTransactionProcessorFactory.determineProcessor(loanTransactionProcessingStrategyCode).getName());
@@ -171,7 +175,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
         DelinquencyBucket delinquencyBucket = null;
         if (delinquencyBucketId != null) {
             delinquencyBucket = delinquencyBucketRepository.findById(delinquencyBucketId)
-                    .orElseThrow(() -> new FundNotFoundException(delinquencyBucketId));
+                    .orElseThrow(() -> DelinquencyBucketNotFoundException.notFound(delinquencyBucketId));
         }
         return delinquencyBucket;
     }
@@ -205,7 +209,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
             if (changes.containsKey("fundId")) {
                 final Long fundId = (Long) changes.get("fundId");
                 final Fund fund = findFundByIdIfProvided(fundId);
-                product.update(fund);
+                product.setFund(fund);
             }
 
             if (changes.containsKey("delinquencyBucketId")) {
@@ -253,7 +257,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
             // accounting related changes
             final boolean accountingTypeChanged = changes.containsKey("accountingRule");
             final Map<String, Object> accountingMappingChanges = this.accountMappingWritePlatformService
-                    .updateLoanProductToGLAccountMapping(product.getId(), command, accountingTypeChanged, product.getAccountingType());
+                    .updateLoanProductToGLAccountMapping(product.getId(), command, accountingTypeChanged, product.getAccountingRule());
             changes.putAll(accountingMappingChanges);
 
             if (changes.containsKey(LoanProductConstants.RATES_PARAM_NAME)) {
@@ -262,6 +266,21 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
                 if (!updated) {
                     changes.remove(LoanProductConstants.RATES_PARAM_NAME);
                 }
+            }
+
+            if (command.parameterExists(LoanProductConstants.SUPPORTED_INTEREST_REFUND_TYPES)) {
+                JsonArray supportedTransactionsForInterestRefund = command
+                        .arrayOfParameterNamed(LoanProductConstants.SUPPORTED_INTEREST_REFUND_TYPES);
+                List<LoanSupportedInterestRefundTypes> supportedInterestRefundTypes = new ArrayList<>();
+                supportedTransactionsForInterestRefund.iterator().forEachRemaining(value -> {
+                    supportedInterestRefundTypes.add(LoanSupportedInterestRefundTypes.valueOf(value.getAsString()));
+                });
+                product.getLoanProductRelatedDetail().setSupportedInterestRefundTypes(supportedInterestRefundTypes);
+            }
+
+            if (command.parameterExists(LoanProductConstants.CHARGE_OFF_BEHAVIOUR)) {
+                product.getLoanProductRelatedDetail().setChargeOffBehaviour(
+                        command.enumValueOfParameterNamed(LoanProductConstants.CHARGE_OFF_BEHAVIOUR, LoanChargeOffBehaviour.class));
             }
 
             if (!changes.isEmpty()) {

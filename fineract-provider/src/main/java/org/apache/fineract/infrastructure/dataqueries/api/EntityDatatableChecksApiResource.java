@@ -72,12 +72,12 @@ public class EntityDatatableChecksApiResource {
             + "Example Request:\n" + "\n" + "entityDatatableChecks?offset=0&limit=15")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(array = @ArraySchema(schema = @Schema(implementation = EntityDatatableChecksApiResourceSwagger.GetEntityDatatableChecksResponse.class)))) })
-    public String retrieveAll(@Context final UriInfo uriInfo, @QueryParam("status") @Parameter(description = "status") final Long status,
+    public String retrieveAll(@Context final UriInfo uriInfo, @QueryParam("status") @Parameter(description = "status") final Integer status,
             @QueryParam("entity") @Parameter(description = "entity") final String entity,
             @QueryParam("productId") @Parameter(description = "productId") final Long productId,
             @QueryParam("offset") @Parameter(description = "offset") final Integer offset,
             @QueryParam("limit") @Parameter(description = "limit") final Integer limit) {
-        final SearchParameters searchParameters = SearchParameters.forPagination(offset, limit);
+        final SearchParameters searchParameters = SearchParameters.builder().limit(limit).offset(offset).build();
         final Page<EntityDataTableChecksData> result = this.readEntityDatatableChecksService.retrieveAll(searchParameters, status, entity,
                 productId);
 
@@ -125,7 +125,7 @@ public class EntityDatatableChecksApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = EntityDatatableChecksApiResourceSwagger.DeleteEntityDatatableChecksTemplateResponse.class))) })
     public String deleteDatatable(
             @PathParam("entityDatatableCheckId") @Parameter(description = "entityDatatableCheckId") final long entityDatatableCheckId,
-            final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
 
         final CommandWrapper commandRequest = new CommandWrapperBuilder()
                 .deleteEntityDatatableChecks(entityDatatableCheckId, apiRequestBodyAsJson).build();

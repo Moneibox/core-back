@@ -36,7 +36,7 @@ import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 
 @Entity
 @Table(name = "m_product_loan_recalculation_details")
-public class LoanProductInterestRecalculationDetails extends AbstractPersistableCustom {
+public class LoanProductInterestRecalculationDetails extends AbstractPersistableCustom<Long> {
 
     @OneToOne
     @JoinColumn(name = "product_id", nullable = false)
@@ -88,13 +88,16 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
     private boolean isArrearsBasedOnOriginalSchedule;
 
     @Column(name = "pre_close_interest_calculation_strategy")
-    private Integer preClosureInterestCalculationStrategy;
+    private Integer preCloseInterestCalculationStrategy;
 
     @Column(name = "is_compounding_to_be_posted_as_transaction")
     private Boolean isCompoundingToBePostedAsTransaction;
 
     @Column(name = "allow_compounding_on_eod")
     private Boolean allowCompoundingOnEod;
+
+    @Column(name = "disallow_interest_calc_on_past_due")
+    private Boolean disallowInterestCalculationOnPastDue;
 
     protected LoanProductInterestRecalculationDetails() {
         //
@@ -156,17 +159,20 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
         Integer preCloseInterestCalculationStrategy = command
                 .integerValueOfParameterNamed(LoanProductConstants.preClosureInterestCalculationStrategyParamName);
         if (preCloseInterestCalculationStrategy == null) {
-            preCloseInterestCalculationStrategy = LoanPreClosureInterestCalculationStrategy.TILL_PRE_CLOSURE_DATE.getValue();
+            preCloseInterestCalculationStrategy = LoanPreCloseInterestCalculationStrategy.TILL_PRE_CLOSURE_DATE.getValue();
         }
 
         final boolean isCompoundingToBePostedAsTransaction = command
                 .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.isCompoundingToBePostedAsTransactionParamName);
 
+        final boolean disallowInterestCalculationOnPastDue = command
+                .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.disallowInterestCalculationOnPastDueParamName);
+
         return new LoanProductInterestRecalculationDetails(interestRecalculationCompoundingMethod, loanRescheduleStrategyMethod,
                 recurrenceFrequency, recurrenceInterval, recurrenceOnNthDay, recurrenceOnDay, recurrenceOnWeekday,
                 compoundingRecurrenceFrequency, compoundingInterval, compoundingRecurrenceOnNthDay, compoundingRecurrenceOnDay,
                 compoundingRecurrenceOnWeekday, isArrearsBasedOnOriginalSchedule, preCloseInterestCalculationStrategy,
-                isCompoundingToBePostedAsTransaction, allowCompoundingOnEod);
+                isCompoundingToBePostedAsTransaction, allowCompoundingOnEod, disallowInterestCalculationOnPastDue);
     }
 
     private LoanProductInterestRecalculationDetails(final Integer interestRecalculationCompoundingMethod,
@@ -175,7 +181,8 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
             Integer compoundingFrequencyType, Integer compoundingInterval, final Integer compoundingFrequencyNthDay,
             final Integer compoundingFrequencyOnDay, final Integer compoundingFrequencyWeekday,
             final boolean isArrearsBasedOnOriginalSchedule, final Integer preCloseInterestCalculationStrategy,
-            final boolean isCompoundingToBePostedAsTransaction, final boolean allowCompoundingOnEod) {
+            final boolean isCompoundingToBePostedAsTransaction, final boolean allowCompoundingOnEod,
+            final boolean disallowInterestCalculationOnPastDue) {
         this.interestRecalculationCompoundingMethod = interestRecalculationCompoundingMethod;
         this.rescheduleStrategyMethod = rescheduleStrategyMethod;
         this.restFrequencyType = restFrequencyType;
@@ -189,9 +196,10 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
         this.compoundingFrequencyOnDay = compoundingFrequencyOnDay;
         this.compoundingFrequencyWeekday = compoundingFrequencyWeekday;
         this.isArrearsBasedOnOriginalSchedule = isArrearsBasedOnOriginalSchedule;
-        this.preClosureInterestCalculationStrategy = preCloseInterestCalculationStrategy;
+        this.preCloseInterestCalculationStrategy = preCloseInterestCalculationStrategy;
         this.isCompoundingToBePostedAsTransaction = isCompoundingToBePostedAsTransaction;
         this.allowCompoundingOnEod = allowCompoundingOnEod;
+        this.disallowInterestCalculationOnPastDue = disallowInterestCalculationOnPastDue;
     }
 
     public void updateProduct(final LoanProduct loanProduct) {
@@ -389,13 +397,13 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
         }
 
         if (command.isChangeInIntegerParameterNamed(LoanProductConstants.preClosureInterestCalculationStrategyParamName,
-                this.preClosureInterestCalculationStrategy)) {
+                this.preCloseInterestCalculationStrategy)) {
             Integer newValue = command.integerValueOfParameterNamed(LoanProductConstants.preClosureInterestCalculationStrategyParamName);
             if (newValue == null) {
-                newValue = LoanPreClosureInterestCalculationStrategy.TILL_PRE_CLOSURE_DATE.getValue();
+                newValue = LoanPreCloseInterestCalculationStrategy.TILL_PRE_CLOSURE_DATE.getValue();
             }
             actualChanges.put(LoanProductConstants.preClosureInterestCalculationStrategyParamName, newValue);
-            this.preClosureInterestCalculationStrategy = newValue;
+            this.preCloseInterestCalculationStrategy = newValue;
         }
 
         if (command.isChangeInBooleanParameterNamed(LoanProductConstants.isCompoundingToBePostedAsTransactionParamName,
@@ -406,6 +414,13 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
             this.isCompoundingToBePostedAsTransaction = newValue;
         }
 
+        if (command.isChangeInBooleanParameterNamed(LoanProductConstants.disallowInterestCalculationOnPastDueParamName,
+                this.disallowInterestCalculationOnPastDue)) {
+            final boolean newValue = command
+                    .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.disallowInterestCalculationOnPastDueParamName);
+            actualChanges.put(LoanProductConstants.disallowInterestCalculationOnPastDueParamName, newValue);
+            this.disallowInterestCalculationOnPastDue = newValue;
+        }
     }
 
     public RecalculationFrequencyType getRestFrequencyType() {
@@ -428,8 +443,8 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
         return this.isArrearsBasedOnOriginalSchedule;
     }
 
-    public LoanPreClosureInterestCalculationStrategy preCloseInterestCalculationStrategy() {
-        return LoanPreClosureInterestCalculationStrategy.fromInt(this.preClosureInterestCalculationStrategy);
+    public LoanPreCloseInterestCalculationStrategy getPreCloseInterestCalculationStrategy() {
+        return LoanPreCloseInterestCalculationStrategy.fromInt(this.preCloseInterestCalculationStrategy);
     }
 
     public Integer getRestFrequencyNthDay() {
@@ -462,5 +477,9 @@ public class LoanProductInterestRecalculationDetails extends AbstractPersistable
 
     public Boolean allowCompoundingOnEod() {
         return this.allowCompoundingOnEod;
+    }
+
+    public Boolean disallowInterestCalculationOnPastDue() {
+        return disallowInterestCalculationOnPastDue;
     }
 }

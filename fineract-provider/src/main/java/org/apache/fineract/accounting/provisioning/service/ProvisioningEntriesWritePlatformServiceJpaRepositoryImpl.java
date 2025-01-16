@@ -28,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
-import org.apache.fineract.accounting.producttoaccountmapping.domain.PortfolioProductType;
 import org.apache.fineract.accounting.provisioning.data.LoanProductProvisioningEntryData;
 import org.apache.fineract.accounting.provisioning.data.ProvisioningEntryData;
 import org.apache.fineract.accounting.provisioning.domain.LoanProductProvisioningEntry;
@@ -54,6 +53,7 @@ import org.apache.fineract.organisation.provisioning.data.ProvisioningCriteriaDa
 import org.apache.fineract.organisation.provisioning.domain.ProvisioningCategory;
 import org.apache.fineract.organisation.provisioning.domain.ProvisioningCategoryRepository;
 import org.apache.fineract.organisation.provisioning.service.ProvisioningCriteriaReadPlatformService;
+import org.apache.fineract.portfolio.PortfolioProductType;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRepository;
 import org.apache.fineract.useradministration.domain.AppUser;
@@ -186,7 +186,7 @@ public class ProvisioningEntriesWritePlatformServiceJpaRepositoryImpl implements
             GLAccount expenseAccount = glAccountRepository.findById(data.getExpenseAccount()).orElseThrow();
             MonetaryCurrency currency = loanProduct.getPrincipalAmount().getCurrency();
             Money money = Money.of(currency, data.getBalance());
-            Money amountToReserve = money.percentageOf(data.getPercentage(), MoneyHelper.getRoundingMode());
+            Money amountToReserve = money.percentageOf(data.getPercentage(), MoneyHelper.getMathContext());
             Long criteraId = data.getCriteriaId();
             LoanProductProvisioningEntry entry = new LoanProductProvisioningEntry().setLoanProduct(loanProduct).setOffice(office)
                     .setCurrencyCode(data.getCurrencyCode()).setProvisioningCategory(provisioningCategory)

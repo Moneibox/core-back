@@ -20,16 +20,20 @@ dependencies {
     // testCompile dependencies are ONLY used in src/test, not src/main.
     // Do NOT repeat dependencies which are ALREADY in implementation or runtimeOnly!
     //
-    tomcat 'org.apache.tomcat:tomcat:10.1.19@zip'
+    tomcat 'org.apache.tomcat:tomcat:10.1.33@zip'
     testImplementation( files("$rootDir/fineract-provider/build/classes/java/main/"),
             project(path: ':fineract-core', configuration: 'runtimeElements'),
             project(path: ':fineract-accounting', configuration: 'runtimeElements'),
             project(path: ':fineract-investor', configuration: 'runtimeElements'),
+            project(path: ':fineract-charge', configuration: 'runtimeElements'),
+            project(path: ':fineract-rates', configuration: 'runtimeElements'),
+            project(path: ':fineract-tax', configuration: 'runtimeElements'),
             project(path: ':fineract-loan', configuration: 'runtimeElements'),
             project(path: ':fineract-savings', configuration: 'runtimeElements'),
             project(path: ':fineract-provider', configuration: 'runtimeElements'),
             project(path: ':fineract-avro-schemas', configuration: 'runtimeElements'),
             project(path: ':fineract-client', configuration: 'runtimeElements'),
+            project(path: ':fineract-progressive-loan', configuration: 'runtimeElements'),
             'com.intuit.karate:karate-junit5',
             // 'com.google.code.gson:gson',
             )
@@ -54,5 +58,5 @@ dependencies {
     testImplementation 'org.mapstruct:mapstruct'
     testAnnotationProcessor 'org.mapstruct:mapstruct-processor'
 
-    testImplementation 'com.github.tomakehurst:wiremock-standalone:3.0.1'
+    testImplementation 'com.github.tomakehurst:wiremock-standalone'
 }

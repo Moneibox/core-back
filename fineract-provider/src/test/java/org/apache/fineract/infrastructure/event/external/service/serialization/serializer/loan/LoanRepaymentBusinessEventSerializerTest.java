@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -85,7 +86,8 @@ public class LoanRepaymentBusinessEventSerializerTest {
         ThreadLocalContextUtil.setActionContext(ActionContext.DEFAULT);
         ThreadLocalContextUtil
                 .setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, LocalDate.now(ZoneId.systemDefault()))));
-        moneyHelper.when(() -> MoneyHelper.getRoundingMode()).thenReturn(RoundingMode.UP);
+        moneyHelper.when(MoneyHelper::getMathContext).thenReturn(new MathContext(12, RoundingMode.UP));
+        moneyHelper.when(MoneyHelper::getRoundingMode).thenReturn(RoundingMode.UP);
     }
 
     @AfterEach
@@ -104,7 +106,7 @@ public class LoanRepaymentBusinessEventSerializerTest {
 
         Loan loanForProcessing = Mockito.mock(Loan.class);
         LoanSummary loanSummary = Mockito.mock(LoanSummary.class);
-        MonetaryCurrency loanCurrency = Mockito.mock(MonetaryCurrency.class);
+        MonetaryCurrency loanCurrency = new MonetaryCurrency("CODE", 1, 1);
 
         LoanRepaymentScheduleInstallment repaymentInstallment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1,
                 LocalDate.now(ZoneId.systemDefault()), loanInstallmentRepaymentDueDate, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
@@ -117,12 +119,9 @@ public class LoanRepaymentBusinessEventSerializerTest {
         when(loanForProcessing.getId()).thenReturn(1L);
         when(loanForProcessing.getAccountNumber()).thenReturn("0001");
         when(loanForProcessing.getExternalId()).thenReturn(ExternalIdFactory.produce("externalId"));
-        when(loanForProcessing.getLoanSummary()).thenReturn(loanSummary);
+        when(loanForProcessing.getSummary()).thenReturn(loanSummary);
         when(loanSummary.getTotalOutstanding()).thenReturn(BigDecimal.valueOf(0.0));
         when(loanForProcessing.getCurrency()).thenReturn(loanCurrency);
-        when(loanCurrency.getCode()).thenReturn("CODE");
-        when(loanCurrency.getCurrencyInMultiplesOf()).thenReturn(1);
-        when(loanCurrency.getDigitsAfterDecimal()).thenReturn(1);
         when(mapper.mapLocalDate(any())).thenReturn(loanInstallmentRepaymentDueDate.format(DateTimeFormatter.ISO_DATE));
         when(pastDueDataMapper.map(any())).thenReturn(pastDueAmount);
         when(pastDueService.retrieveLoanRepaymentPastDueAmountTillDate(loanForProcessing)).thenReturn(null);
@@ -154,7 +153,7 @@ public class LoanRepaymentBusinessEventSerializerTest {
 
         Loan loanForProcessing = Mockito.mock(Loan.class);
         LoanSummary loanSummary = Mockito.mock(LoanSummary.class);
-        MonetaryCurrency loanCurrency = Mockito.mock(MonetaryCurrency.class);
+        MonetaryCurrency loanCurrency = new MonetaryCurrency("CODE", 1, 1);
 
         LoanRepaymentScheduleInstallment repaymentInstallment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1,
                 LocalDate.now(ZoneId.systemDefault()), loanInstallmentRepaymentDueDate, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
@@ -168,12 +167,9 @@ public class LoanRepaymentBusinessEventSerializerTest {
         when(loanForProcessing.getId()).thenReturn(null);
         when(loanForProcessing.getAccountNumber()).thenReturn("0001");
         when(loanForProcessing.getExternalId()).thenReturn(ExternalIdFactory.produce("externalId"));
-        when(loanForProcessing.getLoanSummary()).thenReturn(loanSummary);
+        when(loanForProcessing.getSummary()).thenReturn(loanSummary);
         when(loanSummary.getTotalOutstanding()).thenReturn(BigDecimal.valueOf(0.0));
         when(loanForProcessing.getCurrency()).thenReturn(loanCurrency);
-        when(loanCurrency.getCode()).thenReturn("CODE");
-        when(loanCurrency.getCurrencyInMultiplesOf()).thenReturn(1);
-        when(loanCurrency.getDigitsAfterDecimal()).thenReturn(1);
         when(mapper.mapLocalDate(any())).thenReturn(loanInstallmentRepaymentDueDate.format(DateTimeFormatter.ISO_DATE));
         when(pastDueDataMapper.map(any())).thenReturn(pastDueAmount);
         when(pastDueService.retrieveLoanRepaymentPastDueAmountTillDate(loanForProcessing)).thenReturn(null);

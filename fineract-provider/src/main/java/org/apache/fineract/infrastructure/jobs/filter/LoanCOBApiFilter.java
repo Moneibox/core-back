@@ -32,6 +32,7 @@ import org.apache.fineract.infrastructure.jobs.exception.LoanIdsHardLockedExcept
 import org.apache.fineract.useradministration.exception.UnAuthenticatedUserException;
 import org.apache.http.HttpStatus;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @RequiredArgsConstructor
@@ -65,7 +66,7 @@ public class LoanCOBApiFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         request = new BodyCachingHttpServletRequestWrapper(request);
 
-        if (!helper.isOnApiList(request)) {
+        if (!helper.isOnApiList((BodyCachingHttpServletRequestWrapper) request)) {
             proceed(filterChain, request, response);
         } else {
             try {
@@ -74,7 +75,7 @@ public class LoanCOBApiFilter extends OncePerRequestFilter {
                     proceed(filterChain, request, response);
                 } else {
                     try {
-                        List<Long> loanIds = helper.calculateRelevantLoanIds(request);
+                        List<Long> loanIds = helper.calculateRelevantLoanIds((BodyCachingHttpServletRequestWrapper) request);
                         if (!loanIds.isEmpty() && helper.isLoanBehind(loanIds)) {
                             helper.executeInlineCob(loanIds);
                         }
@@ -84,7 +85,7 @@ public class LoanCOBApiFilter extends OncePerRequestFilter {
                     }
                 }
             } catch (UnAuthenticatedUserException e) {
-                Reject.reject(null, HttpStatus.SC_UNAUTHORIZED).toServletResponse(response);
+                throw new AuthenticationCredentialsNotFoundException("Not Authenticated", e);
             }
         }
     }

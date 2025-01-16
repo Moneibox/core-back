@@ -28,6 +28,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.infrastructure.configuration.data.GlobalConfigurationPropertyData;
 import org.apache.fineract.infrastructure.configuration.exception.GlobalConfigurationPropertyCannotBeModfied;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -40,7 +41,7 @@ import org.apache.fineract.infrastructure.security.exception.ForcePasswordResetE
 @Setter
 @NoArgsConstructor
 @Accessors(chain = true)
-public class GlobalConfigurationProperty extends AbstractPersistableCustom {
+public class GlobalConfigurationProperty extends AbstractPersistableCustom<Long> {
 
     @Column(name = "name", nullable = false)
     private String name;
@@ -99,7 +100,7 @@ public class GlobalConfigurationProperty extends AbstractPersistableCustom {
             this.stringValue = newStringValue;
         }
 
-        final String passwordPropertyName = "force-password-reset-days";
+        final String passwordPropertyName = GlobalConfigurationConstants.FORCE_PASSWORD_RESET_DAYS;
         if (this.name.equalsIgnoreCase(passwordPropertyName)) {
             if ((this.enabled == true && command.hasParameter(valueParamName) && (this.value == 0))
                     || (this.enabled == true && !command.hasParameter(valueParamName) && (previousValue == 0))) {

@@ -60,11 +60,9 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTra
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRescheduleRequestToTermVariationMapping;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanSummaryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariationType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariations;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleDTO;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
@@ -80,12 +78,15 @@ import org.apache.fineract.portfolio.loanaccount.rescheduleloan.domain.LoanResch
 import org.apache.fineract.portfolio.loanaccount.rescheduleloan.domain.LoanRescheduleRequestRepository;
 import org.apache.fineract.portfolio.loanaccount.rescheduleloan.exception.LoanRescheduleRequestNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.ReplayedTransactionBusinessEventService;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.NonTransientDataAccessException;
 import org.springframework.orm.jpa.JpaSystemException;
@@ -100,18 +101,17 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
 
     private final CodeValueRepositoryWrapper codeValueRepositoryWrapper;
     private final PlatformSecurityContext platformSecurityContext;
+    @Qualifier("loanRescheduleRequestDataValidator")
     private final LoanRescheduleRequestDataValidator loanRescheduleRequestDataValidator;
     private final LoanRescheduleRequestRepository loanRescheduleRequestRepository;
     private final LoanRepaymentScheduleHistoryRepository loanRepaymentScheduleHistoryRepository;
     private final LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService;
-    private final LoanTransactionRepository loanTransactionRepository;
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final LoanAssembler loanAssembler;
     private final LoanUtilService loanUtilService;
     private final LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory;
     private final LoanScheduleGeneratorFactory loanScheduleFactory;
-    private final LoanSummaryWrapper loanSummaryWrapper;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private static final DefaultScheduledDateGenerator DEFAULT_SCHEDULED_DATE_GENERATOR = new DefaultScheduledDateGenerator();
     private final LoanAccountDomainService loanAccountDomainService;
@@ -119,6 +119,8 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
     private final ReplayedTransactionBusinessEventService replayedTransactionBusinessEventService;
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
     private final BusinessEventNotifierService businessEventNotifierService;
+    private final LoanAccrualsProcessingService loanAccrualsProcessingService;
+    private final LoanChargeService loanChargeService;
 
     /**
      * create a new instance of the LoanRescheduleRequest object from the JsonCommand object and persist
@@ -193,29 +195,18 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
                 submittedOnDate = jsonCommand.localDateValueOfParameterNamed(RescheduleLoansApiConstants.submittedOnDateParamName);
             }
 
-            // initially set the value to null
-            LocalDate rescheduleFromDate = null;
-
             // start point of the rescheduling exercise
             Integer rescheduleFromInstallment = null;
 
             // initially set the value to null
             LocalDate adjustedDueDate = null;
 
+            LocalDate rescheduleFromDate = jsonCommand
+                    .localDateValueOfParameterNamed(RescheduleLoansApiConstants.rescheduleFromDateParamName);
             // check if the parameter is in the JsonCommand object
-            if (jsonCommand.hasParameter(RescheduleLoansApiConstants.rescheduleFromDateParamName)) {
-                // create a LocalDate object from the "rescheduleFromDate" Date
-                // string
-                LocalDate localDate = jsonCommand.localDateValueOfParameterNamed(RescheduleLoansApiConstants.rescheduleFromDateParamName);
-
-                if (localDate != null) {
-                    // get installment by due date
-                    LoanRepaymentScheduleInstallment installment = loan.getRepaymentScheduleInstallment(localDate);
-                    rescheduleFromInstallment = installment.getInstallmentNumber();
-
-                    // update the value of the "rescheduleFromDate" variable
-                    rescheduleFromDate = localDate;
-                }
+            if (rescheduleFromDate != null) {
+                // get installment by due date
+                rescheduleFromInstallment = loan.getRelatedRepaymentScheduleInstallment(rescheduleFromDate).getInstallmentNumber();
             }
 
             if (jsonCommand.hasParameter(RescheduleLoansApiConstants.adjustedDueDateParamName)) {
@@ -379,9 +370,9 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
             final LoanApplicationTerms loanApplicationTerms = loan.constructLoanApplicationTerms(scheduleGeneratorDTO);
 
             LocalDate rescheduleFromDate = null;
-            Set<LoanTermVariations> activeLoanTermVariations = loan.getActiveLoanTermVariations();
+            List<LoanTermVariations> activeLoanTermVariations = loan.getActiveLoanTermVariations();
             LoanTermVariations dueDateVariationInCurrentRequest = loanRescheduleRequest.getDueDateTermVariationIfExists();
-            if (dueDateVariationInCurrentRequest != null && activeLoanTermVariations != null) {
+            if (dueDateVariationInCurrentRequest != null && !activeLoanTermVariations.isEmpty()) {
                 LocalDate fromScheduleDate = dueDateVariationInCurrentRequest.fetchTermApplicaDate();
                 LocalDate currentScheduleDate = fromScheduleDate;
                 LocalDate modifiedScheduleDate = dueDateVariationInCurrentRequest.fetchDateValue();
@@ -437,7 +428,7 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
             final LoanScheduleGenerator loanScheduleGenerator = this.loanScheduleFactory.create(loanApplicationTerms.getLoanScheduleType(),
                     loanApplicationTerms.getInterestMethod());
             final LoanLifecycleStateMachine loanLifecycleStateMachine = null;
-            loan.setHelpers(loanLifecycleStateMachine, this.loanSummaryWrapper, this.loanRepaymentScheduleTransactionProcessorFactory);
+            loan.setHelpers(loanLifecycleStateMachine, this.loanRepaymentScheduleTransactionProcessorFactory);
             final LoanScheduleDTO loanSchedule = loanScheduleGenerator.rescheduleNextInstallments(mathContext, loanApplicationTerms, loan,
                     loanApplicationTerms.getHolidayDetailDTO(), loanRepaymentScheduleTransactionProcessor, rescheduleFromDate);
 
@@ -447,8 +438,9 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
             } else {
                 loan.updateLoanSchedule(loanSchedule.getLoanScheduleModel());
             }
-            loan.recalculateAllCharges();
-            ChangedTransactionDetail changedTransactionDetail = loan.processTransactions();
+            loanAccrualsProcessingService.reprocessExistingAccruals(loan);
+            loanChargeService.recalculateAllCharges(loan);
+            ChangedTransactionDetail changedTransactionDetail = loan.reprocessTransactions();
 
             this.loanRepaymentScheduleHistoryRepository.saveAll(loanRepaymentScheduleHistoryList);
 
@@ -472,12 +464,12 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
                 replayedTransactionBusinessEventService.raiseTransactionReplayedEvents(changedTransactionDetail);
             }
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-            // update the loan object
+
+            loanAccrualsProcessingService.processAccrualsOnInterestRecalculation(loan, true, false);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanRescheduledDueAdjustScheduleBusinessEvent(loan));
+
             postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
-
-            this.loanAccountDomainService.recalculateAccruals(loan, true);
-            businessEventNotifierService.notifyPostBusinessEvent(new LoanRescheduledDueAdjustScheduleBusinessEvent(loan));
 
             return new CommandProcessingResultBuilder().withCommandId(jsonCommand.commandId()).withEntityId(loanRescheduleRequestId)
                     .withLoanId(loanRescheduleRequest.getLoan().getId()).with(changes).withClientId(loan.getClientId())

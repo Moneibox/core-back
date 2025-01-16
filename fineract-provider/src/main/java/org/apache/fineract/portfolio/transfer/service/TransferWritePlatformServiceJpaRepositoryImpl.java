@@ -52,6 +52,7 @@ import org.apache.fineract.portfolio.group.exception.ClientNotInGroupException;
 import org.apache.fineract.portfolio.group.exception.GroupNotActiveException;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.service.LoanOfficerService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.note.service.NoteWritePlatformService;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
@@ -81,6 +82,7 @@ public class TransferWritePlatformServiceJpaRepositoryImpl implements TransferWr
     private final StaffRepositoryWrapper staffRepositoryWrapper;
     private final ClientTransferDetailsRepositoryWrapper clientTransferDetailsRepositoryWrapper;
     private final PlatformSecurityContext context;
+    private final LoanOfficerService loanOfficerService;
 
     @Override
     @Transactional
@@ -216,9 +218,9 @@ public class TransferWritePlatformServiceJpaRepositoryImpl implements TransferWr
                 loan.updateGroup(destinationGroup);
                 if (inheritDestinationGroupLoanOfficer != null && inheritDestinationGroupLoanOfficer == true
                         && destinationGroupLoanOfficer != null) {
-                    loan.reassignLoanOfficer(destinationGroupLoanOfficer, DateUtils.getBusinessLocalDate());
+                    loanOfficerService.reassignLoanOfficer(loan, destinationGroupLoanOfficer, DateUtils.getBusinessLocalDate());
                 } else if (newLoanOfficer != null) {
-                    loan.reassignLoanOfficer(newLoanOfficer, DateUtils.getBusinessLocalDate());
+                    loanOfficerService.reassignLoanOfficer(loan, newLoanOfficer, DateUtils.getBusinessLocalDate());
                 }
                 this.loanRepositoryWrapper.saveAndFlush(loan);
             }

@@ -54,7 +54,6 @@ import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryType;
 import org.apache.fineract.accounting.journalentry.exception.JournalEntryInvalidException;
 import org.apache.fineract.accounting.journalentry.exception.JournalEntryInvalidException.GlJournalEntryInvalidReason;
-import org.apache.fineract.accounting.producttoaccountmapping.domain.PortfolioProductType;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMapping;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMappingRepository;
 import org.apache.fineract.accounting.producttoaccountmapping.exception.ProductToGLAccountMappingNotFoundException;
@@ -65,6 +64,7 @@ import org.apache.fineract.infrastructure.event.business.domain.journalentry.Loa
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.office.domain.OfficeRepository;
+import org.apache.fineract.portfolio.PortfolioProductType;
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.service.AccountTransfersReadPlatformService;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
@@ -112,6 +112,7 @@ public class AccountingProcessorHelper {
         boolean isAccountTransfer = (Boolean) accountingBridgeData.get("isAccountTransfer");
         boolean isLoanMarkedAsChargeOff = (Boolean) accountingBridgeData.get("isChargeOff");
         boolean isLoanMarkedAsFraud = (Boolean) accountingBridgeData.get("isFraud");
+        final Long chargeOffReasonCodeValue = (Long) accountingBridgeData.get("chargeOffReasonCodeValue");
 
         @SuppressWarnings("unchecked")
         final List<Map<String, Object>> newTransactionsMap = (List<Map<String, Object>>) accountingBridgeData.get("newLoanTransactions");
@@ -172,7 +173,13 @@ public class AccountingProcessorHelper {
         }
 
         return new LoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled, upfrontAccrualBasedAccountingEnabled,
-                periodicAccrualBasedAccountingEnabled, newLoanTransactions, isLoanMarkedAsChargeOff, isLoanMarkedAsFraud);
+                periodicAccrualBasedAccountingEnabled, newLoanTransactions, isLoanMarkedAsChargeOff, isLoanMarkedAsFraud,
+                chargeOffReasonCodeValue);
+    }
+
+    public ProductToGLAccountMapping getChargeOffMappingByCodeValue(Long loanProductId, PortfolioProductType productType,
+            Long chargeOffReasonId) {
+        return accountMappingRepository.findChargeOffReasonMapping(loanProductId, productType.getValue(), chargeOffReasonId);
     }
 
     public SavingsDTO populateSavingsDtoFromMap(final Map<String, Object> accountingBridgeData, final boolean cashBasedAccountingEnabled,
@@ -720,6 +727,16 @@ public class AccountingProcessorHelper {
             final Long loanProductId, final Long paymentTypeId, final Long loanId, final String transactionId,
             final LocalDate transactionDate, final BigDecimal amount, final Boolean isReversal) {
         final GLAccount account = getLinkedGLAccountForLoanProduct(loanProductId, accountMappingTypeId, paymentTypeId);
+        if (isReversal) {
+            createCreditJournalEntryForLoan(office, currencyCode, account, loanId, transactionId, transactionDate, amount);
+        } else {
+            createDebitJournalEntryForLoan(office, currencyCode, account, loanId, transactionId, transactionDate, amount);
+        }
+    }
+
+    public void createDebitJournalEntryOrReversalForLoan(final Office office, final String currencyCode, final Long loanId,
+            final String transactionId, final LocalDate transactionDate, final BigDecimal amount, final Boolean isReversal,
+            final GLAccount account) {
         if (isReversal) {
             createCreditJournalEntryForLoan(office, currencyCode, account, loanId, transactionId, transactionDate, amount);
         } else {

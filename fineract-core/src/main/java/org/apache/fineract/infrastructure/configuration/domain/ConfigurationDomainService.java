@@ -81,7 +81,7 @@ public interface ConfigurationDomainService {
 
     boolean isPrincipalCompoundingDisabledForOverdueLoans();
 
-    Long retreivePeroidInNumberOfDaysForSkipMeetingDate();
+    Long retreivePeriodInNumberOfDaysForSkipMeetingDate();
 
     boolean isChangeEmiIfRepaymentDateSameAsDisbursementDateEnabled();
 
@@ -142,5 +142,7 @@ public interface ConfigurationDomainService {
     String getAccrualDateConfigForCharge();
 
     String getNextPaymentDateConfigForLoan();
+
+    boolean isImmediateChargeAccrualPostMaturityEnabled();
 
 }

@@ -26,6 +26,7 @@ import org.apache.fineract.portfolio.client.domain.ClientRepositoryWrapper;
 import org.apache.fineract.portfolio.client.domain.ClientTransferDetailsRepositoryWrapper;
 import org.apache.fineract.portfolio.group.domain.GroupRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.service.LoanOfficerService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.note.service.NoteWritePlatformService;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
@@ -49,10 +50,11 @@ public class TransferConfiguration {
             NoteWritePlatformService noteWritePlatformService, StaffRepositoryWrapper staffRepositoryWrapper,
             SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
             SavingsAccountWritePlatformService savingsAccountWritePlatformService,
-            ClientTransferDetailsRepositoryWrapper clientTransferDetailsRepositoryWrapper, PlatformSecurityContext context) {
+            ClientTransferDetailsRepositoryWrapper clientTransferDetailsRepositoryWrapper, PlatformSecurityContext context,
+            LoanOfficerService loanOfficerService) {
         return new TransferWritePlatformServiceJpaRepositoryImpl(clientRepositoryWrapper, officeRepository, calendarInstanceRepository,
                 groupRepository, loanWritePlatformService, savingsAccountWritePlatformService, loanRepositoryWrapper,
                 savingsAccountRepositoryWrapper, transfersDataValidator, noteWritePlatformService, staffRepositoryWrapper,
-                clientTransferDetailsRepositoryWrapper, context);
+                clientTransferDetailsRepositoryWrapper, context, loanOfficerService);
     }
 }

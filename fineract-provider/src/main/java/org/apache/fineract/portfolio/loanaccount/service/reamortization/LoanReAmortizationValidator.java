@@ -34,7 +34,7 @@ import org.apache.fineract.portfolio.loanaccount.api.LoanReAmortizationApiConsta
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.AdvancedPaymentScheduleTransactionProcessor;
-import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.ChargeOrTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.ChangeOperation;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
 import org.springframework.stereotype.Component;
 
@@ -114,8 +114,8 @@ public class LoanReAmortizationValidator {
         }
 
         // validate if there's no payment between the reamortization and today
-        boolean repaymentExistsAfterReAmortization = loan.getLoanTransactions().stream()
-                .anyMatch(tx -> tx.getTypeOf().isRepaymentType() && transactionHappenedAfterOther(tx, optionalReAmortizationTx.get()));
+        boolean repaymentExistsAfterReAmortization = loan.getLoanTransactions().stream().anyMatch(tx -> tx.getTypeOf().isRepaymentType()
+                && !tx.isReversed() && transactionHappenedAfterOther(tx, optionalReAmortizationTx.get()));
         if (repaymentExistsAfterReAmortization) {
             throw new GeneralPlatformDomainRuleException("error.msg.loan.reamortize.repayment.exists.after.reamortization",
                     "Undoing a reamortization can only be done if there hasn't been any repayment afterwards", loan.getId());
@@ -130,6 +130,6 @@ public class LoanReAmortizationValidator {
     }
 
     private boolean transactionHappenedAfterOther(LoanTransaction transaction, LoanTransaction otherTransaction) {
-        return new ChargeOrTransaction(transaction).compareTo(new ChargeOrTransaction(otherTransaction)) > 0;
+        return new ChangeOperation(transaction).compareTo(new ChangeOperation(otherTransaction)) > 0;
     }
 }

@@ -24,12 +24,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.sql.DataSource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenantConnection;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.infrastructure.core.service.tenant.TenantDetailsService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -43,21 +43,15 @@ import org.springframework.stereotype.Service;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TomcatJdbcDataSourcePerTenantService implements RoutingDataSourceService, ApplicationListener<ContextRefreshedEvent> {
 
     private static final Map<Long, DataSource> TENANT_TO_DATA_SOURCE_MAP = new ConcurrentHashMap<>();
+    @Qualifier("hikariTenantDataSource")
     private final DataSource tenantDataSource;
     private final TenantDetailsService tenantDetailsService;
 
     private final DataSourcePerTenantServiceFactory dataSourcePerTenantServiceFactory;
-
-    @Autowired
-    public TomcatJdbcDataSourcePerTenantService(final @Qualifier("hikariTenantDataSource") DataSource tenantDataSource,
-            final DataSourcePerTenantServiceFactory dataSourcePerTenantServiceFactory, final TenantDetailsService tenantDetailsService) {
-        this.tenantDataSource = tenantDataSource;
-        this.dataSourcePerTenantServiceFactory = dataSourcePerTenantServiceFactory;
-        this.tenantDetailsService = tenantDetailsService;
-    }
 
     @Override
     public DataSource retrieveDataSource() {
@@ -70,10 +64,8 @@ public class TomcatJdbcDataSourcePerTenantService implements RoutingDataSourceSe
             Long tenantConnectionKey = tenantConnection.getConnectionId();
             // if tenantConnection information available switch to the
             // appropriate datasource for that tenant.
-            actualDataSource = TENANT_TO_DATA_SOURCE_MAP.computeIfAbsent(tenantConnectionKey, (key) -> {
-                DataSource tenantSpecificDataSource = dataSourcePerTenantServiceFactory.createNewDataSourceFor(tenantConnection);
-                return tenantSpecificDataSource;
-            });
+            actualDataSource = TENANT_TO_DATA_SOURCE_MAP.computeIfAbsent(tenantConnectionKey,
+                    (key) -> dataSourcePerTenantServiceFactory.createNewDataSourceFor(tenant, tenantConnection));
 
         }
 
@@ -93,7 +85,7 @@ public class TomcatJdbcDataSourcePerTenantService implements RoutingDataSourceSe
         final FineractPlatformTenantConnection tenantConnection = tenant.getConnection();
         Long tenantConnectionKey = tenantConnection.getConnectionId();
         TENANT_TO_DATA_SOURCE_MAP.computeIfAbsent(tenantConnectionKey, (key) -> {
-            DataSource tenantSpecificDataSource = dataSourcePerTenantServiceFactory.createNewDataSourceFor(tenantConnection);
+            DataSource tenantSpecificDataSource = dataSourcePerTenantServiceFactory.createNewDataSourceFor(tenant, tenantConnection);
             try (Connection connection = tenantSpecificDataSource.getConnection()) {
                 String url = connection.getMetaData().getURL();
                 log.debug("Established database connection with URL {}", url);

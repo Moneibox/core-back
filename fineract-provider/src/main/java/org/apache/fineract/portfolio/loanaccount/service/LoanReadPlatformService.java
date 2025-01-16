@@ -31,16 +31,12 @@ import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApprovalData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanRepaymentScheduleInstallmentData;
-import org.apache.fineract.portfolio.loanaccount.data.LoanScheduleAccrualData;
-import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
-import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionRelationData;
 import org.apache.fineract.portfolio.loanaccount.data.PaidInAdvanceData;
 import org.apache.fineract.portfolio.loanaccount.data.RepaymentScheduleRelatedLoanData;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleData;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
 
@@ -75,12 +71,6 @@ public interface LoanReadPlatformService {
 
     LoanAccountData retrieveLoanProductDetailsTemplate(Long productId, Long clientId, Long groupId);
 
-    LoanAccountData retrieveClientDetailsTemplate(Long clientId);
-
-    LoanAccountData retrieveGroupDetailsTemplate(Long groupId);
-
-    LoanAccountData retrieveGroupAndMembersDetailsTemplate(Long groupId);
-
     Collection<CalendarData> retrieveCalendars(Long groupId);
 
     Page<LoanAccountData> retrieveAll(SearchParameters searchParameters);
@@ -106,17 +96,9 @@ public interface LoanReadPlatformService {
 
     DisbursementData retrieveLoanDisbursementDetail(Long loanId, Long disbursementId);
 
-    Collection<LoanTermVariationsData> retrieveLoanTermVariations(Long loanId, Integer termType);
-
-    Collection<LoanScheduleAccrualData> retriveScheduleAccrualData();
-
     LoanTransactionData retrieveRecoveryPaymentTemplate(Long loanId);
 
     LoanTransactionData retrieveLoanWriteoffTemplate(Long loanId);
-
-    Collection<LoanScheduleAccrualData> retrievePeriodicAccrualData(LocalDate tillDate);
-
-    Collection<LoanScheduleAccrualData> retrievePeriodicAccrualData(LocalDate tillDate, Loan loan);
 
     LoanTransactionData retrieveLoanChargeOffTemplate(Long loanId);
 
@@ -125,10 +107,6 @@ public interface LoanReadPlatformService {
     List<Long> fetchLoansForInterestRecalculation(Integer pageSize, Long maxLoanIdInList, String officeHierarchy);
 
     LoanTransactionData retrieveLoanPrePaymentTemplate(LoanTransactionType repaymentTransactionType, Long loanId, LocalDate onDate);
-
-    Collection<LoanTransactionData> retrieveWaiverLoanTransactions(Long loanId);
-
-    Collection<LoanSchedulePeriodData> fetchWaiverInterestRepaymentData(Long loanId);
 
     boolean isGuaranteeRequired(Long loanId);
 
@@ -159,8 +137,6 @@ public interface LoanReadPlatformService {
     List<LoanAccountData> retrieveGLIMChildLoansByGLIMParentAccount(String parentloanAccountNumber);
 
     List<LoanRepaymentScheduleInstallmentData> getRepaymentDataResponse(Long loanId);
-
-    List<LoanTransactionRelationData> retrieveLoanTransactionRelationsByLoanTransactionId(Long loanTransactionId);
 
     Long retrieveLoanTransactionIdByExternalId(ExternalId externalId);
 

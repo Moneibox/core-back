@@ -30,8 +30,9 @@ import io.restassured.specification.ResponseSpecification;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.fineract.client.models.GlobalConfigurationPropertyData;
+import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
 import org.apache.fineract.client.models.PutPermissionsRequest;
+import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.integrationtests.common.AuditHelper;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.CommonConstants;
@@ -58,6 +59,7 @@ public class MakercheckerTest {
     private SavingsAccountHelper savingsAccountHelper;
     private static final String START_DATE_STRING = "03 June 2023";
     private static final String TRANSACTION_DATE_STRING = "05 June 2023";
+    private GlobalConfigurationHelper globalConfigurationHelper;
 
     @BeforeEach
     public void setup() {
@@ -70,6 +72,7 @@ public class MakercheckerTest {
         this.auditHelper = new AuditHelper(requestSpec, responseSpec);
         this.savingsProductHelper = new SavingsProductHelper();
         this.savingsAccountHelper = new SavingsAccountHelper(this.requestSpec, this.responseSpec);
+        this.globalConfigurationHelper = new GlobalConfigurationHelper();
     }
 
     @Test
@@ -82,22 +85,11 @@ public class MakercheckerTest {
 
     @Test
     public void testMakerCheckerOn() {
-        GlobalConfigurationPropertyData mcConfig = GlobalConfigurationHelper.getGlobalConfigurationByName(requestSpec, responseSpec,
-                "maker-checker");
-        Long mcConfigId = mcConfig.getId();
-        boolean mcConfigUpdate = false;
-        if (!Boolean.TRUE.equals(mcConfig.getEnabled())) {
-            GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, mcConfigId, true);
-            mcConfigUpdate = true;
-        }
-        GlobalConfigurationPropertyData sameMcConfig = GlobalConfigurationHelper.getGlobalConfigurationByName(requestSpec, responseSpec,
-                "enable-same-maker-checker");
-        Long sameMcConfigId = mcConfig.getId();
-        boolean sameMcConfigUpdate = false;
-        if (Boolean.TRUE.equals(sameMcConfig.getEnabled())) {
-            GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, sameMcConfigId, false);
-            sameMcConfigUpdate = true;
-        }
+
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.MAKER_CHECKER,
+                new PutGlobalConfigurationsRequest().enabled(true));
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_SAME_MAKER_CHECKER,
+                new PutGlobalConfigurationsRequest().enabled(false));
 
         try {
             // client permission - maker-checker disabled
@@ -114,11 +106,11 @@ public class MakercheckerTest {
             // create maker user
             String maker = Utils.uniqueRandomStringGenerator("user", 8);
             final Integer makerUserId = (Integer) UserHelper.createUser(this.requestSpec, this.responseSpec, roleId, staffId, maker,
-                    "P4ssw0rd", "resourceId");
+                    "A1b2c3d4e5f$", "resourceId");
 
             // create client - maker-checker disabled
             RequestSpecification makerRequestSpec = new RequestSpecBuilder().setContentType(ContentType.JSON).build()
-                    .header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey(maker, "P4ssw0rd"));
+                    .header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey(maker, "A1b2c3d4e5f$"));
             Integer clientId = ClientHelper.createClient(makerRequestSpec, this.responseSpec);
             assertNotNull(clientId);
             ClientHelper.verifyClientCreatedOnServer(requestSpec, this.responseSpec, clientId);
@@ -163,9 +155,9 @@ public class MakercheckerTest {
             // create checker user
             String checker = Utils.uniqueRandomStringGenerator("user", 8);
             final Integer checkerUserId = (Integer) UserHelper.createUser(this.requestSpec, this.responseSpec, roleId, staffId, checker,
-                    "P4ssw0rd", "resourceId");
+                    "A1b2c3d4e5f$", "resourceId");
             RequestSpecification checkerRequestSpec = new RequestSpecBuilder().setContentType(ContentType.JSON).build()
-                    .header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey(checker, "P4ssw0rd"));
+                    .header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey(checker, "A1b2c3d4e5f$"));
 
             // check by another checker user should succeed
             HashMap<?, ?> response = MakercheckersHelper.approveMakerCheckerEntry(checkerRequestSpec, responseSpec, clientCommandId);
@@ -190,12 +182,13 @@ public class MakercheckerTest {
                     CommonConstants.RESPONSE_RESOURCE_ID);
             assertNotNull(withdrawalId);
         } finally {
-            if (mcConfigUpdate) {
-                GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, mcConfigId, false);
-            }
-            if (sameMcConfigUpdate) {
-                GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, sameMcConfigId, true);
-            }
+
+            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.MAKER_CHECKER,
+                    new PutGlobalConfigurationsRequest().enabled(false));
+
+            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_SAME_MAKER_CHECKER,
+                    new PutGlobalConfigurationsRequest().enabled(true));
+
             PutPermissionsRequest putPermissionsRequest = new PutPermissionsRequest().putPermissionsItem("WITHDRAWAL_SAVINGSACCOUNT",
                     false);
             rolesHelper.updatePermissions(putPermissionsRequest);

@@ -19,6 +19,9 @@
 package org.apache.fineract.integrationtests.common;
 
 import static io.restassured.RestAssured.given;
+import static java.time.temporal.ChronoUnit.DAYS;
+import static java.time.temporal.ChronoUnit.MONTHS;
+import static java.time.temporal.ChronoUnit.WEEKS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -63,6 +66,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.integrationtests.ConfigProperties;
 import org.apache.http.conn.HttpHostConnectException;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -76,7 +80,7 @@ import org.slf4j.LoggerFactory;
 public final class Utils {
 
     public static final String TENANT_PARAM_NAME = "tenantIdentifier";
-    public static final String DEFAULT_TENANT = "default";
+    public static final String DEFAULT_TENANT = ConfigProperties.Backend.TENANT;
     public static final String TENANT_IDENTIFIER = TENANT_PARAM_NAME + '=' + DEFAULT_TENANT;
     private static final String LOGIN_URL = "/fineract-provider/api/v1/authentication?" + TENANT_IDENTIFIER;
     public static final String TENANT_TIME_ZONE = "Asia/Kolkata";
@@ -95,13 +99,11 @@ public final class Utils {
     public static final String SOURCE_SET_NUMBERS_AND_LETTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     public static final String SOURCE_SET_NUMBERS = "1234567890";
 
-    private Utils() {
-
-    }
+    private Utils() {}
 
     public static void initializeRESTAssured() {
-        RestAssured.baseURI = "https://localhost";
-        RestAssured.port = 8443;
+        RestAssured.baseURI = ConfigProperties.Backend.PROTOCOL + "://" + ConfigProperties.Backend.HOST;
+        RestAssured.port = ConfigProperties.Backend.PORT;
         RestAssured.keyStore("src/main/resources/keystore.jks", "openmf");
         RestAssured.useRelaxedHTTPSValidation();
     }
@@ -175,7 +177,7 @@ public final class Utils {
     }
 
     public static String loginIntoServerAndGetBase64EncodedAuthenticationKey() {
-        return loginIntoServerAndGetBase64EncodedAuthenticationKey("mifos", "password");
+        return loginIntoServerAndGetBase64EncodedAuthenticationKey(ConfigProperties.Backend.USERNAME, ConfigProperties.Backend.PASSWORD);
     }
 
     public static String loginIntoServerAndGetBase64EncodedAuthenticationKey(String username, String password) {
@@ -213,6 +215,16 @@ public final class Utils {
     public static <T> T performServerGet(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
             final String getURL, final String jsonAttributeToGetBack) {
         final String json = given().spec(requestSpec).expect().spec(responseSpec).log().ifError().when().get(getURL).andReturn().asString();
+        if (jsonAttributeToGetBack == null) {
+            return (T) json;
+        }
+        return (T) JsonPath.from(json).get(jsonAttributeToGetBack);
+    }
+
+    public static <T> T performServerPatch(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
+            final String getURL, final String jsonAttributeToGetBack) {
+        final String json = given().spec(requestSpec).expect().spec(responseSpec).log().ifError().when().patch(getURL).andReturn()
+                .asString();
         if (jsonAttributeToGetBack == null) {
             return (T) json;
         }
@@ -521,5 +533,17 @@ public final class Utils {
 
     public static LocalDate getDateAsLocalDate(String dateAsString) {
         return LocalDate.parse(dateAsString, dateFormatter);
+    }
+
+    public static long getDifferenceInDays(final LocalDate localDateBefore, final LocalDate localDateAfter) {
+        return DAYS.between(localDateBefore, localDateAfter);
+    }
+
+    public static long getDifferenceInWeeks(final LocalDate localDateBefore, final LocalDate localDateAfter) {
+        return WEEKS.between(localDateBefore, localDateAfter);
+    }
+
+    public static long getDifferenceInMonths(final LocalDate localDateBefore, final LocalDate localDateAfter) {
+        return MONTHS.between(localDateBefore, localDateAfter);
     }
 }

@@ -23,11 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.builder.ResponseSpecBuilder;
-import io.restassured.http.ContentType;
-import io.restassured.specification.RequestSpecification;
-import io.restassured.specification.ResponseSpecification;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -45,6 +40,7 @@ import org.apache.fineract.client.models.GetLoansApprovalTemplateResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdChargesChargeIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdChargesTemplateResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
+import org.apache.fineract.client.models.GetLoansLoanIdTransactionsTemplateResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactionsTransactionIdResponse;
 import org.apache.fineract.client.models.PostClientsResponse;
 import org.apache.fineract.client.models.PostDelinquencyBucketResponse;
@@ -60,58 +56,36 @@ import org.apache.fineract.client.models.PostLoansLoanIdTransactionsResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsTransactionIdRequest;
 import org.apache.fineract.client.models.PutChargeTransactionChangesRequest;
 import org.apache.fineract.client.models.PutChargeTransactionChangesResponse;
+import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
 import org.apache.fineract.client.models.PutLoansLoanIdChargesChargeIdRequest;
 import org.apache.fineract.client.models.PutLoansLoanIdChargesChargeIdResponse;
 import org.apache.fineract.client.models.PutLoansLoanIdRequest;
 import org.apache.fineract.client.models.PutLoansLoanIdResponse;
 import org.apache.fineract.client.util.CallFailedRuntimeException;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
-import org.apache.fineract.integrationtests.client.IntegrationTest;
+import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.integrationtests.common.BusinessDateHelper;
 import org.apache.fineract.integrationtests.common.ClientHelper;
-import org.apache.fineract.integrationtests.common.GlobalConfigurationHelper;
 import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.integrationtests.common.accounting.Account;
-import org.apache.fineract.integrationtests.common.accounting.AccountHelper;
 import org.apache.fineract.integrationtests.common.charges.ChargesHelper;
 import org.apache.fineract.integrationtests.common.loans.LoanApplicationTestBuilder;
 import org.apache.fineract.integrationtests.common.loans.LoanProductTestBuilder;
-import org.apache.fineract.integrationtests.common.loans.LoanTestLifecycleExtension;
 import org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper;
 import org.apache.fineract.integrationtests.common.organisation.StaffHelper;
 import org.apache.fineract.integrationtests.common.products.DelinquencyBucketsHelper;
 import org.apache.fineract.integrationtests.common.products.DelinquencyRangesHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsAccountHelper;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
-@ExtendWith(LoanTestLifecycleExtension.class)
-public class ExternalIdSupportIntegrationTest extends IntegrationTest {
-
-    private ResponseSpecification responseSpec;
-    private RequestSpecification requestSpec;
-
-    private ClientHelper clientHelper;
-    private AccountHelper accountHelper;
-    private LoanTransactionHelper loanTransactionHelper;
+public class ExternalIdSupportIntegrationTest extends BaseLoanIntegrationTest {
 
     private DateTimeFormatter dateFormatter = new DateTimeFormatterBuilder().appendPattern("dd MMMM yyyy").toFormatter();
 
-    @BeforeAll
-    public void init() {
-        Utils.initializeRESTAssured();
-        this.requestSpec = new RequestSpecBuilder().setContentType(ContentType.JSON).build();
-        this.requestSpec.header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey());
-        this.responseSpec = new ResponseSpecBuilder().expectStatusCode(200).build();
-        this.clientHelper = new ClientHelper(this.requestSpec, this.responseSpec);
-        this.accountHelper = new AccountHelper(this.requestSpec, this.responseSpec);
-        this.loanTransactionHelper = new LoanTransactionHelper(this.requestSpec, this.responseSpec);
-    }
-
     @Test
     public void test() {
-        GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, 50, true);
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID,
+                new PutGlobalConfigurationsRequest().enabled(true));
         final Account assetAccount = this.accountHelper.createAssetAccount();
         final Account assetFeeAndPenaltyAccount = this.accountHelper.createAssetAccount();
         final Account incomeAccount = this.accountHelper.createIncomeAccount();
@@ -690,7 +664,8 @@ public class ExternalIdSupportIntegrationTest extends IntegrationTest {
         response = loanTransactionHelper.getLoanTransactionDetails(loanExternalIdStr, payChargeExternalIdStr);
         assertEquals(payChargeExternalIdStr, response.getExternalId());
 
-        GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, 50, false);
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID,
+                new PutGlobalConfigurationsRequest().enabled(false));
     }
 
     @Test
@@ -853,8 +828,10 @@ public class ExternalIdSupportIntegrationTest extends IntegrationTest {
     @Test
     public void loan() {
 
-        GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, 50, true);
-        GlobalConfigurationHelper.updateIsBusinessDateEnabled(requestSpec, responseSpec, Boolean.TRUE);
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID,
+                new PutGlobalConfigurationsRequest().enabled(true));
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
+                new PutGlobalConfigurationsRequest().enabled(true));
         new BusinessDateHelper().updateBusinessDate(new BusinessDateRequest().type(BusinessDateType.BUSINESS_DATE.getName())
                 .date("2022.10.10").dateFormat("yyyy.MM.dd").locale("en"));
         try {
@@ -900,12 +877,23 @@ public class ExternalIdSupportIntegrationTest extends IntegrationTest {
             assertEquals(actualDate, loanApprovalResult.getApprovalDate());
             assertEquals(1000.0, loanApprovalResult.getApprovalAmount());
             assertEquals(1000.0, loanApprovalResult.getNetDisbursalAmount());
+            assertNotNull(loanApprovalResult.getCurrency());
+            assertNotNull(loanApprovalResult.getCurrency().getCode());
+            assertEquals("USD", loanApprovalResult.getCurrency().getCode());
 
             GetLoansLoanIdResponse loanDetailsResult = this.loanTransactionHelper.getLoanDetails(loanExternalIdStr);
             assertEquals(loanExternalIdStr, loanDetailsResult.getExternalId());
 
             this.loanTransactionHelper.approveLoan("02 September 2022", loanId);
             String txnExternalIdStr = UUID.randomUUID().toString();
+
+            GetLoansLoanIdTransactionsTemplateResponse disburseTemplate = this.loanTransactionHelper
+                    .retrieveTransactionTemplate(loanExternalIdStr, "disburse", null, null, null);
+            assertEquals(1000.0, disburseTemplate.getAmount());
+            assertNotNull(disburseTemplate.getCurrency());
+            assertNotNull(disburseTemplate.getCurrency().getCode());
+            assertEquals("USD", disburseTemplate.getCurrency().getCode());
+
             final HashMap disbursedLoanResult = this.loanTransactionHelper.disburseLoan("03 September 2022", loanId, "1000",
                     txnExternalIdStr);
 
@@ -1093,8 +1081,10 @@ public class ExternalIdSupportIntegrationTest extends IntegrationTest {
             assertEquals(transactionExternalId3, chargeOffResult.getResourceExternalId());
 
         } finally {
-            GlobalConfigurationHelper.updateIsBusinessDateEnabled(requestSpec, responseSpec, Boolean.FALSE);
-            GlobalConfigurationHelper.updateEnabledFlagForGlobalConfiguration(requestSpec, responseSpec, 50, false);
+            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
+                    new PutGlobalConfigurationsRequest().enabled(false));
+            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID,
+                    new PutGlobalConfigurationsRequest().enabled(false));
         }
     }
 

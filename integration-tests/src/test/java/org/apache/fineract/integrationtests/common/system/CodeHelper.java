@@ -27,18 +27,18 @@ import io.restassured.specification.ResponseSpecification;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import org.apache.fineract.client.models.GetCodesResponse;
+import org.apache.fineract.client.models.PostCodeValueDataResponse;
+import org.apache.fineract.client.models.PostCodeValuesDataRequest;
+import org.apache.fineract.integrationtests.client.IntegrationTest;
 import org.apache.fineract.integrationtests.common.Utils;
 
-public final class CodeHelper {
+public final class CodeHelper extends IntegrationTest {
 
     private static final String COUNTRY_CODE_NAME = "COUNTRY";
     private static final String STATE_CODE_NAME = "STATE";
     private static final String ADDRESS_TYPE_CODE_NAME = "ADDRESS_TYPE";
     private static final String CHARGE_OFF_REASONS_CODE_NAME = "ChargeOffReasons";
-
-    private CodeHelper() {
-
-    }
 
     public static final String CODE_ID_ATTRIBUTE_NAME = "id";
     public static final String RESPONSE_ID_ATTRIBUTE_NAME = "resourceId";
@@ -93,6 +93,35 @@ public final class CodeHelper {
         return code;
     }
 
+    public static HashMap<String, Object> getOrCreateCodeValueByCodeIdAndCodeName(final RequestSpecification requestSpec,
+            final ResponseSpecification responseSpec, final Integer codeId, final String codeName, final Integer position) {
+
+        ArrayList<HashMap<String, Object>> allCodeValues = CodeHelper.getAllCodeValuesByCodeId(requestSpec, responseSpec, codeId);
+        HashMap<String, Object> codesByName = filterCodesByName(allCodeValues, codeName);
+
+        if (codesByName.isEmpty()) {
+            CodeHelper.createCodeValue(requestSpec, responseSpec, codeId, codeName, position);
+            allCodeValues = CodeHelper.getAllCodeValuesByCodeId(requestSpec, responseSpec, codeId);
+        }
+
+        return filterCodesByName(allCodeValues, codeName);
+    }
+
+    private static HashMap<String, Object> filterCodesByName(ArrayList<HashMap<String, Object>> allCodeValues, String codeName) {
+        final HashMap<String, Object> codes = new HashMap<>();
+
+        for (HashMap<String, Object> map : allCodeValues) {
+            String name = (String) map.get("name");
+            if (name.equals(codeName)) {
+                codes.put("id", map.get("id"));
+                codes.put("name", map.get("name"));
+                break;
+            }
+        }
+
+        return codes;
+    }
+
     public static HashMap<String, Object> retrieveOrCreateCodeValue(Integer codeId, final RequestSpecification requestSpec,
             final ResponseSpecification responseSpec) {
         Integer codeValueId = null;
@@ -117,6 +146,13 @@ public final class CodeHelper {
 
         return Utils.performServerGet(requestSpec, responseSpec, CODE_URL + "?" + Utils.TENANT_IDENTIFIER, "");
 
+    }
+
+    public static ArrayList<HashMap<String, Object>> getAllCodeValuesByCodeId(final RequestSpecification requestSpec,
+            final ResponseSpecification responseSpec, final Integer codeId) {
+
+        return Utils.performServerGet(requestSpec, responseSpec,
+                CODE_VALUE_URL.replace("[codeId]", codeId.toString()) + "?" + Utils.TENANT_IDENTIFIER, "");
     }
 
     public static Object getSystemDefinedCodes(final RequestSpecification requestSpec, final ResponseSpecification responseSpec) {
@@ -244,4 +280,11 @@ public final class CodeHelper {
                 getTestCodeValueAsJSON(codeValueName, description, position), jsonAttributeToGetback);
     }
 
+    public PostCodeValueDataResponse createCodeValue(Long codeId, PostCodeValuesDataRequest request) {
+        return ok(fineract().codeValues.createCodeValue(codeId, request));
+    }
+
+    public List<GetCodesResponse> retrieveCodes() {
+        return ok(fineract().codes.retrieveCodes());
+    }
 }
